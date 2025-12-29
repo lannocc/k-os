@@ -10,6 +10,8 @@ websockets
 #ffpyplayer
 just_playback
 moviepy==1.0.3
+pydub
+audioop-lts
 
 # TESTING NOW...
 cvzone

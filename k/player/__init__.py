@@ -1,11 +1,14 @@
 from k.ui import *
+from .loop import LoopPlayer
 
 
 class Stack():
     def __init__(self, k):
         self.k = k
         self.players = [ ]
+        self.loop_players = {}
         self.suspended = [ ]
+
         #self.fps = None
 
         self.bigbg = pygame.Surface((WIDTH, HEIGHT - STATUS))
@@ -24,6 +27,11 @@ class Stack():
 
         for p in self.players:
             p.kill(replace)
+
+        for p in self.loop_players.values():
+            p.kill()
+
+        self.loop_players = {}
 
         self.players = []
 
@@ -107,10 +115,28 @@ class Stack():
 
     def tick(self):
         if not self.players:
-            return False
+            # Tick loops even if main player isn't active
+            for player in self.loop_players.values():
+                player.tick()
+            return bool(self.loop_players)
 
         for player in reversed(self.players):
             player.tick()
+
+        for player in self.loop_players.values():
+            player.tick()
+
+    def toggle_loop(self, key, actions):
+        key_name = pygame.key.name(key).upper()
+        if key in self.loop_players:
+            self.loop_players[key].kill()
+            del self.loop_players[key]
+            print(f"Loop {key_name} disabled.")
+        elif actions:
+            player = LoopPlayer(self.k, key, actions)
+            self.loop_players[key] = player
+            player.play()
+            print(f"Loop {key_name} enabled.")
 
     def toggle_size(self):
         if self.big:
@@ -196,4 +222,3 @@ class Stack():
             return
 
         self.players[-1].keyup(key, mod)
-

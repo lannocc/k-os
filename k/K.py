@@ -16,7 +16,9 @@ from k.replay.ops import *
 import k.online as online
 import k.ack as ack
 import k.player as player
+from k.player.actions import PlayerPause
 from k.player.ops import Commands
+import k.player.music as music
 
 import sys
 from datetime import datetime
@@ -81,6 +83,15 @@ class OS:
         if self.imagine:
             self.imagine = kimg.ImageEngine()
             self.imagine.start()
+
+        # F-Key Audio Loop Tracks state
+        self.f_key_down_time = {}
+        self.f_key_loops = {}
+        self.f_key_recording = None
+        self.f_key_current_actions = []
+
+        # Auto-Tune Music Mode
+        self.music = music.Mode(self)
 
         self.init_stop = datetime.now()
 
@@ -230,7 +241,6 @@ class OS:
         self.escaping = False
         self.shifting = False
         self.control = False
-        self.music_mode = False
 
         #if self.replays:
         #    self.gui.update(0)
@@ -243,6 +253,17 @@ class OS:
     def tick(self, gui=True):
         #print('.', end='')
         #sys.stdout.flush()
+
+        # F-Key Audio Loop Tracks state check for starting recording
+        if self.f_key_down_time and self.f_key_recording is None:
+            now = time.perf_counter()
+            for key, down_time in list(self.f_key_down_time.items()):
+                if now - down_time > 0.5:
+                    self.f_key_recording = key
+                    self.f_key_current_actions = [PlayerPause()] # Set start time reference
+                    del self.f_key_down_time[key]
+                    print(f"Recording loop on {pygame.key.name(key)}...")
+                    break
 
         tdelta = self.clock.tick()
 
@@ -340,6 +361,11 @@ class OS:
         elif event.type == pygame.KEYDOWN:
             self.replay_op(KeyDown(event.scancode))
 
+            # F-Key down event for loop tracks
+            if event.key >= pygame.K_F1 and event.key <= pygame.K_F12:
+                if event.key not in self.f_key_down_time: # Avoid auto-repeat
+                    self.f_key_down_time[event.key] = time.perf_counter()
+
             alt = event.mod & pygame.KMOD_ALT
             ctrl = event.mod & pygame.KMOD_CTRL
             shift = event.mod & pygame.KMOD_SHIFT \
@@ -369,6 +395,9 @@ class OS:
                     self.escaping = True
                     self.status('Q')
 
+            elif event.key == pygame.K_SPACE:
+                self.music.toggle()
+
             elif not self.confirming:
                 if self.escaping:
                     self.escaping = False
@@ -387,22 +416,43 @@ class OS:
                         self.score()
 
                 else:
-                    self.player.keydown(event.key, event.mod)
+                    if self.music.active and self.music.keydown(event.key):
+                        # Music mode handled the key, do nothing more.
+                        pass
+                    else:
+                        # Default event handling
+                        self.player.keydown(event.key, event.mod)
 
-                    if not self.ack and not self.player.big:
-                        if not self.music_mode:
+                        if not self.ack and not self.player.big:
                             self.cur_panel.keydown(event.key, event.mod)
 
-                        if event.key == pygame.K_LSHIFT \
-                                or event.key == pygame.K_RSHIFT:
-                            self.shifting = True
+                            if event.key == pygame.K_LSHIFT or event.key == pygame.K_RSHIFT:
+                                self.shifting = True
 
-                        elif event.key == pygame.K_LCTRL \
-                                or event.key == pygame.K_RCTRL:
-                            self.control = True
+                            elif event.key == pygame.K_LCTRL or event.key == pygame.K_RCTRL:
+                                self.control = True
 
         elif event.type == pygame.KEYUP:
             self.replay_op(KeyUp(event.scancode))
+
+            # F-Key up event for loop tracks
+            if event.key >= pygame.K_F1 and event.key <= pygame.K_F12:
+                down_time = self.f_key_down_time.pop(event.key, None)
+                if down_time:
+                    duration = time.perf_counter() - down_time
+                    if duration < 0.5:  # Short press: toggle loop
+                        if self.f_key_recording == event.key:
+                            self.f_key_recording = None
+                            self.f_key_current_actions = []
+                            print(f"Recording on {pygame.key.name(event.key)} cancelled.")
+                        else:
+                            self.player.toggle_loop(event.key, self.f_key_loops.get(event.key))
+                    else:  # Long press release: save loop
+                        if self.f_key_recording == event.key:
+                            self.f_key_loops[event.key] = self.f_key_current_actions
+                            self.f_key_recording = None
+                            print(f"Loop saved to {pygame.key.name(event.key)}. "
+                                  f"({len(self.f_key_current_actions)} actions)")
 
             if self.panel_home.panel_keys.discover:
                 self.panel_home.panel_keys.keyup(event.key, event.mod)
@@ -416,18 +466,22 @@ class OS:
                     self.player.killall()
 
             elif not self.confirming:
-                self.player.keyup(event.key, event.mod)
+                if self.music.active and self.music.keyup(event.key):
+                    # Music mode handled the key, do nothing more.
+                    pass
+                else:
+                    self.player.keyup(event.key, event.mod)
 
-                if not self.ack and not self.player.big:
-                    self.cur_panel.keyup(event.key, event.mod)
+                    if not self.ack and not self.player.big:
+                        self.cur_panel.keyup(event.key, event.mod)
 
-                if event.key == pygame.K_LSHIFT \
-                        or event.key == pygame.K_RSHIFT:
-                    self.shifting = False
+                    if event.key == pygame.K_LSHIFT \
+                            or event.key == pygame.K_RSHIFT:
+                        self.shifting = False
 
-                elif event.key == pygame.K_LCTRL \
-                        or event.key == pygame.K_RCTRL:
-                    self.control = False
+                    elif event.key == pygame.K_LCTRL \
+                            or event.key == pygame.K_RCTRL:
+                        self.control = False
 
         elif event.type == pygame.MOUSEMOTION:
             self.replay_op(MouseMove(event.pos[0], event.pos[1]))
@@ -563,6 +617,8 @@ class OS:
         #elif mode == 'A':
         #    #pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
         #    pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_CROSSHAIR)
+        elif mode == 'S':
+            pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
         elif mode == 'K':
             pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
         elif mode == 'C':

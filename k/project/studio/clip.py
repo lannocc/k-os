@@ -200,8 +200,11 @@ class Entry(KPanel):
         #player.show()
         #player.play()
         player = Player(self.k, self.clip_id, self.loop, self.jumps)
+        if not player.go:
+            return None
         self.k.player.open(player, stacked=stack)
         self.k.player.play()
+        return player
 
     def remove_clip(self):
         self.k.panel_project.panel_studio.panel_clip.remove_clip(self)
@@ -245,3 +248,4 @@ class Entry(KPanel):
         if key == self.key:
             stack = mod & pygame.KMOD_SHIFT
             self.play(stack)
+

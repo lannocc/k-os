@@ -67,7 +67,8 @@ class Panel(Keys):
             info='Paste clipboard contents (when cursor is in a text field).')
         self.nop(pygame.K_b, 'B', left=pygame.K_v)
         self.nop(pygame.K_n, 'N', left=pygame.K_b)
-        self.nop(pygame.K_m, 'M', left=pygame.K_n)
+        self.key(pygame.K_m, 'M', left=pygame.K_n)
+        self.combo((pygame.K_LCTRL, pygame.K_m), info='Toggle music mode.')
 
         self.key(pygame.K_LCTRL, 'Ctrl', size=KEY[0]//2, top=pygame.K_LSHIFT,
             info=INFO_MOD)

@@ -144,5 +144,7 @@ class Panel(Keys):
     def descr(self):
         return 'When the player is open, the following key shortcuts become ' \
              + 'available. The keyboard numpad area must be used for ' \
-             + 'numbered items.'
+             + 'numbered items. When music mode is active (toggled with ' \
+             + 'Ctrl+M), F1-F12 keys can be used for live audio looping ' \
+             + '(short press to toggle, long press to record).'
 

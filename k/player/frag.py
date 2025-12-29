@@ -1,6 +1,7 @@
 import k.db as kdb
 import k.storage as media
 from .ui import Player as UI
+from k.replay.ops import Action
 from .core import Resource, Tracker
 from .video import Player as Video
 
@@ -10,6 +11,7 @@ class Chaos(UI):
         # We intentionally do NOT call super().__init__()
 
         self.frag_id = frag_id
+        self.k = k # Store k for action recording
 
         go = 'ko'
         try:
@@ -23,6 +25,7 @@ class Chaos(UI):
                 res = Resource(source, k.imagine)
                 trk = Tracker(res, begin=start, end=stop)
                 go = Video(k, trk, loop, jumps)
+                go.frag_id = self.frag_id
 
             else:
                 raise ValueError(
@@ -90,7 +93,7 @@ class Chaos(UI):
         if not self.go:
             return
 
-        self.go.seek()
+        self.go.seek(frame)
 
     def update_frame(self, frame):
         if not self.go:

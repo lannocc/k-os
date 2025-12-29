@@ -23,6 +23,7 @@ MODES = {
     'K': 'keys.png',    # keyboard discovery
     'Q': 'quit.png',    # quitting
     'C': 'confirm.png', # confirmation required
+    'M': 'music.png',   # music mode
 }
 
 LOG_DISABLE = [

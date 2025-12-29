@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 import time
 
+# NOTE: This file is for UI/system-level replay actions.
+# For player-specific actions used in music looping, see k/player/actions.py
+
 
 PRECISION = 1000000 # microseconds
 

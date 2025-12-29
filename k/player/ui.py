@@ -2,6 +2,7 @@ from k.ui import *
 import k.db as kdb
 import k.storage as media
 from k.home import IMAGE
+from k.replay.ops import Action
 from .core import get_size_to_fit
 
 import random
@@ -110,6 +111,11 @@ class Player(KPanel):
         self.cur_btn.disable()
         self.cur_panel = self.panel_chaos
 
+        # For music mode override
+        self.music_mode_override = False
+        self.music_mode_loop_begin = 0
+        self.music_mode_loop_end = 0
+
         self.reset()
 
     def reset(self):
@@ -121,6 +127,8 @@ class Player(KPanel):
         #self.holding = 0
         self.holding = [ ]
         self.pdrag = False
+
+        self.music_mode_override = False
 
         self.trk.reset()
         self.img = None
@@ -147,6 +155,13 @@ class Player(KPanel):
         if self.playing:
             return
 
+        if self.k.f_key_recording is not None:
+            from k.player.actions import PlayerPlay
+            # The action is recorded based on the new state
+            frag_id = getattr(self, 'frag_id', None)
+            if frag_id is not None:
+                    self.k.f_key_current_actions.append(PlayerPlay(frag_id))
+
         self.op_start()
         self.progress.enable()
         self.btn_pp.set_text('PAUSE')
@@ -158,6 +173,10 @@ class Player(KPanel):
         if not self.playing:
             return
 
+        if self.k.f_key_recording is not None:
+            from k.player.actions import PlayerPause
+            self.k.f_key_current_actions.append(PlayerPause())
+
         self.op_stop()
         self.btn_pp.set_text('RESUME')
 
@@ -168,6 +187,10 @@ class Player(KPanel):
         if self.playing is None:
             return
 
+        if self.k.f_key_recording is not None:
+            from k.player.actions import PlayerStop
+            self.k.f_key_current_actions.append(PlayerStop())
+
         self.reset()
 
         if not replace:
@@ -175,6 +198,11 @@ class Player(KPanel):
             self.k.replay_break()
 
     def seek(self, frame):
+        if self.k.f_key_recording is not None:
+            from k.player.actions import PlayerSeek
+            # Record absolute frame number for the tracker
+            self.k.f_key_current_actions.append(PlayerSeek(frame + self.trk.begin))
+
         if self.playing and self.pdrag \
                 and frame + self.trk.begin == self.trk.end:
             frame -= 1
@@ -196,6 +224,10 @@ class Player(KPanel):
             if pframe != self.trk.frame - self.trk.begin:
                 #print(f'seeking pframe {pframe}')
                 self.seek(pframe)
+
+            elif self.music_mode_override and self.playing and not self.pdrag and not self.holding:
+                if pframe < self.music_mode_loop_begin or pframe > self.music_mode_loop_end:
+                    self.seek(self.music_mode_loop_begin)
 
             elif self.playing and self.pdrag:
                 self.seek(self.trk.frame - self.trk.begin - 1)
@@ -306,11 +338,21 @@ class Player(KPanel):
     def click(self, element, target=None):
         if element is self.btn_pp:
             self.pause() if self.playing else self.play()
+            if self.k.f_key_recording is not None:
+                from k.player.actions import PlayerPlay, PlayerPause
+                # The action is recorded based on the new state
+                if self.playing:
+                    frag_id = getattr(self, 'frag_id', None)
+                    if frag_id is not None:
+                         self.k.f_key_current_actions.append(PlayerPlay(frag_id))
+                else:
+                    self.k.f_key_current_actions.append(PlayerPause())
 
         elif element is self.btn_save:
             self.k.job(self.save)
 
         elif element is self.btn_clip:
+            # Note: clip/seq actions are not currently recorded for loops
             self.k.job(self.clip)
 
         elif element is self.btn_seq:
