@@ -116,7 +116,6 @@ class Panel(KPanel):
         #self.cur_btn_mod.disable()
 
         self.keys = {}
-        self.started = None
 
     def show(self):
         super().show()
@@ -141,7 +140,6 @@ class Panel(KPanel):
             media.start_project(self.project_id)
             self.panel_clip.refresh_clips()
             self.panel_seq.refresh_seqs()
-            self.started = None
 
             self.k.panel_project.panel_library.refresh(self.project_id)
             self.btn_close.enable()
@@ -162,7 +160,6 @@ class Panel(KPanel):
         self.panel_clip.refresh_clips()
         self.panel_seq.refresh_seqs()
         self.k.panel_project.panel_library.refresh(self.project_id)
-        self.started = None
 
     def close_project(self):
         self.project_id = None
@@ -174,24 +171,6 @@ class Panel(KPanel):
 
         self.keys = {}
         self.k.panel_project.panel_library.refresh()
-
-    #def suspend(self):
-    #    self.btn_close.enable()
-    #    self.inp_name.enable()
-    #    self.btn_name.enable()
-
-    #    self.panel_clip.enable()
-    #    self.k.player.suspend()
-    #    self.started = None
-
-    #def resume(self):
-    #    self.btn_close.disable()
-    #    self.inp_name.disable()
-    #    self.btn_name.disable()
-
-    #    self.panel_clip.disable()
-    #    self.k.player.resume()
-    #    self.started = datetime.now()
 
     def panel_swap(self, btn, panel):
         '''
@@ -260,26 +239,12 @@ class Panel(KPanel):
             self.cur_panel.click(element, target)
 
     def keydown(self, key, mod):
-        if key == pygame.K_BREAK:
-            #if self.started:
-            #    self.suspend()
-            #else:
-            #    self.resume()
-            pass
-
+        # Per music proposal, key-assigned clips are always active.
+        if key in self.keys:
+            # music_mode priority is handled in OS.kick before this is called.
+            self.keys[key].keydown(key, mod)
         else:
-            if self.started:
-                #for entry in self.clips:
-                #    entry.keydown(key, mod)
-                if key in self.keys:
-                    self.keys[key].keydown(key, mod)
-
             self.cur_panel.keydown(key, mod)
 
     def keyup(self, key, mod):
-        if key == pygame.K_BREAK:
-            pass
-
-        else:
-            self.cur_panel.keyup(key, mod)
-
+        self.cur_panel.keyup(key, mod)

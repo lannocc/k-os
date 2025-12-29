@@ -230,6 +230,7 @@ class OS:
         self.escaping = False
         self.shifting = False
         self.control = False
+        self.music_mode = False
 
         #if self.replays:
         #    self.gui.update(0)
@@ -389,7 +390,8 @@ class OS:
                     self.player.keydown(event.key, event.mod)
 
                     if not self.ack and not self.player.big:
-                        self.cur_panel.keydown(event.key, event.mod)
+                        if not self.music_mode:
+                            self.cur_panel.keydown(event.key, event.mod)
 
                         if event.key == pygame.K_LSHIFT \
                                 or event.key == pygame.K_RSHIFT:
@@ -825,4 +827,3 @@ class OS:
 
         #pygame.quit()
         print('graceful death')
-

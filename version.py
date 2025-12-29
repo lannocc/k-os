@@ -1,4 +1,4 @@
-VVHEN="12.28 theovon 20+15 /5"
+VVHEN="12.28 theovon 23+00 /5"
 THEY="yahoo.com"
 SAW="LANNOCC"
 ME="shawn"

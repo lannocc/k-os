@@ -90,17 +90,6 @@ class Panel(KPanel):
         for entry in self.clips:
             entry.click(element, target)
 
-    def keydown(self, key, mod):
-        if key == pygame.K_BREAK:
-            if self.started:
-                self.pause()
-            else:
-                self.resume()
-
-        #elif self.started:
-        #    for entry in self.clips:
-        #        entry.keydown(key, mod)
-
 
 class Entry(KPanel):
     def __init__(self, k, container, y, clip):
@@ -211,7 +200,8 @@ class Entry(KPanel):
         #player.show()
         #player.play()
         player = Player(self.k, self.clip_id, self.loop, self.jumps)
-        self.k.player.open(player)
+        self.k.player.open(player, stacked=stack)
+        self.k.player.play()
 
     def remove_clip(self):
         self.k.panel_project.panel_studio.panel_clip.remove_clip(self)
@@ -255,4 +245,3 @@ class Entry(KPanel):
         if key == self.key:
             stack = mod & pygame.KMOD_SHIFT
             self.play(stack)
-
