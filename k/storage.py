@@ -135,6 +135,19 @@ def add_video_to_library(video, video_id=None):
             count = kdb.insert_caption_list(caps)
             print(f'      {count} rows inserted')
 
+        elif root.tag == 'transcript':
+            caps = []
+            for elem in root:
+                if elem.tag == 'text' and 'start' in elem.attrib and elem.text:
+                    start_ms = int(float(elem.attrib['start']) * 1000)
+                    line = elem.text.strip().replace('\n', ' ')
+                    if line:
+                        caps.append((captions_id, start_ms, line))
+
+            print(f'   inserting {len(caps)} rows from transcript...')
+            count = kdb.insert_caption_list(caps)
+            print(f'      {count} rows inserted')
+
         else:
             print(f'   UNSUPPORTED captions type: {root.tag}')
 
