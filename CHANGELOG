@@ -1,0 +1,124 @@
+@%@~LICENSE:OK~@%@
+
+saw_122825_1 - [theovon] Moving from mercurial to git.
+
+saw_123124_1 - [laurendaigle] A minor commit to close out 2024.
+
+saw_052123_3 - [megadeth] Web UI video player.
+
+saw_052123_2 - [megadeth] Web UI ack image viewer.
+
+saw_052123_1 - [megadeth] Beginning web UI.
+
+saw_051923_1 - [lex] The last for the /2 series.
+
+saw_060522_1 - [(crickets)] New Wiggle tool icon. More art.
+
+saw_060122_10- [(crickets)] More art and fixes.
+
+saw_060122_9 - [(crickets)] Art.
+
+saw_060122_8 - [(crickets)] Bug fix (ack color tool).
+
+saw_060122_7 - [(crickets)] Fix ack+player bug!
+
+saw_060122_6 - [(crickets)] ...include replay capture (PRAC).
+
+saw_060122_5 - [(crickets)] ...double that (Player Rack Ack Chaos).
+
+saw_060122_4 - [(crickets)] Include the test drawings as included samples (ack).
+
+saw_060122_3 - [(crickets)] Randomly use ack saves in player rack chaos panel.
+
+saw_060122_2 - [opeth] Bug fix.
+
+saw_060122_1 - [opeth] Ack tool cursors.
+
+saw_053122_2 - [opeth] Ack: all tools basically working (no text or group yet).
+
+saw_053122_1 - [opeth] Fixing ack tooling: color, rect, and ellipse so far.
+
+saw_053022_1 - [kaczynski] Color palette for ack.
+
+saw_052822_1 - [ledzeppelin] More ack work.
+
+saw_052722_3 - [ledzeppelin] Ack copy/paste (requires xclip system utility).
+
+saw_052722_2 - [gojira] Ack save.
+
+saw_052722_1 - [bach] A little bit of cleanup in ack classes.
+
+saw_052622_5 - [bach] Implement ack Rect and Ellipse tools and Delete function.
+
+saw_052622_4 - [bach] Add some color choices to ack.
+
+saw_052622_3 - [bach] Begin to implement tools and objects in ack.
+
+saw_052622_2 - [beethoven] Now have working captions filter in player rack.
+
+saw_052622_1 - [beethoven] Implement keywords and labels in player rack. Add
+               ability to hide labels globally.
+
+saw_052522_3 - [labyrinth] Improved confirmation/error dialogs.
+
+saw_052522_2 - [labyrinth] Implemented a "list all" function for HotKeys.
+
+saw_052522_1 - [labyrinth] Finished HotKeys panel for player.
+
+saw_052422_1 - [labyrinth] Starting to implement HotKeys panel.
+
+saw_052322_2 - [polog] More work on player rack. Starting to implement ack
+               (blackboard). Minor UI tweaks such as new status modes and
+               cursors. Improved escape key handling.
+
+saw_052322_1 - [polog] Starting to implement player rack.
+
+saw_052122_2 - [yelawolf] Remove the UNIQUE constraint on caption start time
+               because some files are actually marked with multiple captions
+               occurring at the same time. Add some more deferred downloads.
+
+saw_052122_1 - [yelawolf] Implemented deferred downloads and seeded the database
+               with some videos. Beginning of a label system for tagging videos.
+               Channels, videos, and labels added by the user now start at
+               id=1000 to leave room for seeded entries. Database now enforces
+               foreign key constraints and patches use transactions. We now
+               perform a VACUUM operation on the database after patching or
+               application exit. Player explicitly disables key repeat on key
+               press. Debug DIP switch has been changed to the plus sign (+).
+
+saw_051622_2 - [nin] Partial implementation of full-screen mode without meta.
+
+saw_051622_1 - [nin] Improve database performance. Moved audio extraction step
+               to the main video download routine so we no longer have to wait
+               for audio extraction upon first play.
+
+saw_051522_1 - [nin] Add switch.py to easily start with DIP switches set.
+
+saw_042422_1 - [controldenied] Beginning to get replay captures to play.
+
+saw_042222_1 - [controldenied] Reworking the replay system so we can now
+               capture keyboard and mouse actions. The command-line options
+               (dip switches) should now be specified as the first option only
+               and without spaces.
+
+saw_041222_1 - [theprodigy] Minor changes wrap up this series.
+
+saw_040822_1 - [theprodigy] Just a little bit better.
+
+saw_040722_1 - [theprodigy] Introducing: ImageEngine (imagine)! Add more
+               command-line options (see README). Status bar now with separate
+               UIManager (sui). Player NUM-pad key improvements. Get FPS/avg
+               score readouts with TAB key.
+
+saw_040422_1 - We now have a working sequence/segment editor.
+
+saw_040222_1 - Implemented replay system. Improved player performance.
+
+saw_033022_2 - Fix kush prompt paint (cursor overlap problem).
+
+saw_033022_1 - Migration to the media/fragment system and versioned database.
+
+saw_032622_2 - Rename directories.
+
+saw_032622_1 - First commit.
+

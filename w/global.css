@@ -1,0 +1,591 @@
+html, body {
+    margin: 0;
+    padding: 0;
+    cursor: default;
+}
+
+body {
+    background-color: white;
+    color: #333;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+}
+
+#view {
+    position: relative;
+    min-height: 100vh;
+}
+
+#content {
+    padding: 8px;
+    padding-bottom: 2.5rem; /* footer height */
+}
+
+h1 {
+    background-image: url('/g/title.png');
+    background-repeat: no-repeat;
+    color: #ff3e00;
+    font-size: 4em;
+    font-weight: 100;
+    margin: 0 .5em .5em 0;
+    padding: 50px 0 0 100px;
+}
+
+h1 a {
+    color: #ff3e00 ! important;
+}
+
+h1 + q {
+    color: #666;;
+    display: block;
+    margin: -2em 1em 3em 3em;
+}
+
+footer {
+    position: absolute;
+    bottom: 0;
+    background-color: #F5F5F5;
+    box-sizing: border-box;
+    width: 100%;
+    height: 2.5rem;         /* footer height */
+    text-align: right;
+    color: #CCC;
+    padding: 0.5em 1.3em 0.5em 1.3em;
+    vertical-align: middle;
+}
+
+footer hr {
+    margin: 0;
+    display: none;
+}
+
+footer aside {
+    vertical-align: middle;
+    display: block;
+    float: left;
+    text-align: left;
+    padding-top: .2em;
+    cursor: pointer;
+}
+
+footer aside label {
+    cursor: pointer;
+    user-select: none;
+}
+
+#version {
+    font-size: smaller;
+    color: #333;
+    margin-right: 2em;
+}
+
+@media screen {
+    html.theme body {
+        background-color: #222;
+        color: white;
+    }
+
+    html.theme h1 + q {
+        color: #999;
+    }
+
+    html.theme footer {
+        background-color: #111;
+        color: #444;
+    }
+
+    html.theme #version {
+        color: #BBB;
+    }
+}
+
+.slider {
+    display: inline-block;
+    height: 28px;
+    width: 60px;
+    margin-top: -9px;
+    margin-right: 5px;
+    vertical-align: middle;
+}
+
+.slider input {
+    display: none;
+}
+
+.slider span {
+    position: relative;
+    top: 4px;
+    display: block;
+    cursor: pointer;
+    border-radius: 28px;
+    transition: .4s;
+    width: 60px;
+    height: 28px;
+    background-color: #CCC;
+}
+
+.slider span:before {
+    content: "";
+    position: absolute;
+    bottom: 3px;
+    left: 4px;
+    width: 22px;
+    height: 22px;
+    background-color: white;
+    border-radius: 50%;
+    transition: .4s;
+}
+
+.slider input:checked + span {
+    background-color: #66BB6A;
+}
+
+.slider input:checked + span:before {
+    transform: translateX(30px);
+}
+
+footer sub {
+    display: inline-block;
+    vertical-align: middle;
+    font-style: italic;
+    padding-top: 4px;
+}
+
+a, .link {
+    color: rgb(0,100,200);
+    text-decoration: none;
+}
+
+a:visited {
+    color: rgb(0,80,160);
+}
+
+a:hover, .link:not(:disabled):hover {
+    text-decoration: underline;
+}
+
+a:hover, .link:not(:disabled):hover, button:not(:disabled):hover {
+    cursor: pointer;
+}
+
+select:not(:disabled), select:not(:disabled) option {
+    cursor: context-menu;
+}
+
+input, button, select, textarea, [contenteditable] {
+    font-family: inherit;
+    font-size: inherit;
+    -webkit-padding: 0.4em 0;
+    padding: 0.4em;
+    margin: 0 0 0.5em 0;
+    box-sizing: border-box;
+    border: 3px solid #ccc;
+    border-radius: 2px;
+    background-color: #FFFFF9;
+}
+
+input.error, select.error, textarea.error, .error[contenteditable] {
+    background-color: #FBB;
+}
+
+[contenteditable] {
+    cursor: text;
+}
+
+[role=textbox] {
+    display: block;
+    width: 100%;
+    padding: .42em;
+    white-space: pre-wrap;
+}
+
+input:disabled {
+    color: #ccc;
+}
+
+button {
+    font-family: serif;
+    color: #343;
+    background-color: #DFE9EC;
+    border-radius: 7px;
+    outline: none;
+}
+
+button:disabled {
+    background-color: #EEE;
+    color: #999;
+}
+
+button[type=submit], input[type=submit] {
+    font-weight: bold;
+}
+
+button.start, button.remove, button.config {
+    font-size: 0px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+}
+
+button.start {
+    background: url('start.png') center center no-repeat;
+}
+
+button.remove {
+    background: url('remove.png') center center no-repeat;
+}
+
+button.config {
+    background: url('configure.png') center center no-repeat;
+    vertical-align: top;
+}
+
+button:not(:disabled)[type=submit], input:not(:disabled)[type=submit] {
+    border-color: darkblue;
+}
+
+button:not(:disabled):hover {
+    background-color: #79D9F9;
+    border-color: blue;
+}
+
+button:not(:disabled):active, button.active {
+    background-color: #FFF9FF;
+    border-color: #DBB;
+}
+
+button:focus {
+    background-color: #E9F9F3;
+    text-decoration: underline;
+    border-color: #5C9;
+}
+
+nav button {
+    border-radius: 13px 13px 0 0;
+    border-bottom-color: #DBB;
+}
+
+nav button:not(:disabled):active, nav button.active {
+    border-bottom-color: #FFF9FF;
+}
+
+nav button:not(:disabled):active:hover, nav button.active:hover {
+    border-bottom-style: dashed;
+}
+
+button.link {
+    display: inline;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    border-radius: 0;
+}
+
+button.link.active {
+    background-color: #DFD9DF;
+}
+
+button.prompt {
+    border-radius: 0;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    border-bottom-style: dashed;
+}
+
+@media screen {
+    html.theme a, html.theme .link {
+        color: #5BF;
+    }
+
+    html.theme a:visited {
+        color: #5EF;
+    }
+
+    html.theme input, html.theme select, html.theme textarea,
+    html.theme [contenteditable] {
+        /* background-color: #555542; */
+        background-color: #333;
+        color: white;
+        border-color: #999;
+    }
+
+    html.theme input.error, html.theme select.error, html.theme textarea.error,
+    html.theme .error[contenteditable] {
+        background-color: #FBB;
+    }
+
+    html.theme button {
+        color: #CDE;
+        background-color: #091827;
+        border-color: #345;
+    }
+
+    html.theme button:disabled {
+        background-color: #333;
+        color: #999;
+    }
+
+    html.theme button.link:disabled {
+        color: #999;
+    }
+
+    html.theme button:not(:disabled)[type=submit],
+    html.theme input:not(:disabled)[type=submit] {
+        border-color: lightblue;
+    }
+
+    html.theme button:not(:disabled):hover {
+        background-color: #180981;
+        color: #9C6;
+    }
+
+    html.theme button:not(:disabled):active, html.theme button.active {
+        background-color: #321;
+        border-color: #242;
+    }
+
+    html.theme button:focus {
+        background-color: #810918;
+        border-color: #963;
+    }
+
+    html.theme nav button {
+        border-bottom-color: #242;
+    }
+
+    html.theme nav button:not(:disabled):active, html.theme nav button.active {
+        border-bottom-color: #321;
+    }
+
+    html.theme nav button:not(:disabled):active:hover,
+    html.theme nav button.active:hover {
+        border-color: blue;
+    }
+
+    html.theme button.link {
+        background: none;
+        color: rgb(42,123,234);
+    }
+
+    html.theme button.link.active {
+        background-color: #432;
+    }
+}
+
+label {
+    display: block;
+}
+
+table {
+    border: 2px solid #AAA;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+th, td {
+    padding: .2em .4em .2em .4em;
+}
+
+table thead {
+    background-color: #CCC;
+    font-weight: bold;
+}
+
+table tbody tr td {
+    border-bottom: 1px solid #DDD;
+}
+
+@media screen {
+    html.theme table {
+        border-color: #555;
+    }
+
+    html.theme table thead {
+        background-color: #333;
+    }
+
+    html.theme table tbody tr td {
+        border-color: #444;
+    }
+}
+
+.sidenav {
+    text-align: right;
+    /*
+    background-color: #999;
+    color: #FFF;
+    */
+    border-right: 5px solid #F9F9F9;
+    box-shadow: 3px 0 2px #CCC;
+    background-image: linear-gradient(to right, #FFF, #F9F9F9);
+    border-radius: 0 50px 50px 0;
+    padding: 22px 18px 22px 18px;
+}
+
+.sidenav ul, .sidenav li {
+    display: block;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.sidenav button {
+    text-align: right;
+    margin: .11em;
+}
+
+.sidenav button:first-line {
+    padding-right: 5px;
+}
+
+@media screen {
+    html.theme .sidenav {
+        /*
+        background-color: #666;
+        color: #000;
+        */
+        border-color: #444;
+        box-shadow: 3px 0 2px #333;
+        background-image: linear-gradient(to right, #222, #444);
+    }
+
+    html.theme .sidenav .link {
+        color: #6CF;
+    }
+}
+
+#pws {
+    font-weight: bold;
+}
+
+#pws.online {
+    color: green;
+}
+
+#pws.connecting {
+    color: purple;
+}
+
+#pws.retrying {
+    color: darkorange;
+}
+
+#pws.error {
+    color: red;
+}
+
+code {
+    margin: 0 .5em 0 .5em;
+    font-weight: bold;
+    color: #033;
+}
+
+code em {
+    font-style: normal;
+    font-weight: normal;
+    margin-right: .5em;
+}
+
+.acct {
+    font-family: monospace;
+    font-size: smaller;
+    color: #444;
+    white-space: nowrap;
+}
+
+@media screen {
+    html.theme #pws.connecting {
+        color: orange;
+    }
+
+    html.theme #pws.retrying {
+        color: yellow;
+    }
+
+    html.theme code {
+        color: #DFF;
+    }
+
+    html.theme .acct {
+        color: #BBB;
+    }
+}
+
+
+@media screen and (max-width: 600px) {
+    #content {
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    h1 {
+        padding: .5em;
+        padding-top: 1.5em;
+        margin: 0;
+        text-align: center;
+    }
+
+    h1 + q {
+        position: absolute;
+        margin: 0;
+        padding: 3em;
+        left: 0;
+        top: 0;
+    }
+
+    .sidenav {
+        padding-left: 0;
+        padding-right: 0;
+        font-size: smaller;
+        border-radius: 0 22px 22px 0;
+    }
+}
+
+
+@media print {
+    body {
+        color: black;
+    }
+
+    h1 {
+        font-size: 2em;
+        background-size: 2em;
+        padding: 15px 15px 15px 77px;
+        margin: 0;
+    }
+
+    h1 + q {
+        margin-top: -1em;
+        margin-left: 4em;
+    }
+
+    h2 {
+        margin-top: 0;
+    }
+
+    nav {
+        display: none;
+    }
+
+    header, footer aside {
+        display: none;
+    }
+
+    footer {
+        background: none;
+        border-top: 2px solid #D9FDD9;
+        color:999;
+    }
+
+    button:not(.link) {
+        display: none;
+    }
+
+    button.link {
+        text-decoration: underline;
+    }
+}
+

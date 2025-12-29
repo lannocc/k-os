@@ -1,0 +1,17 @@
+pygame_gui<=0.6.9
+colorama
+opencv-python
+pytube
+websockets
+
+# the 4.4.0 and 4.5.0 versions are giving me trouble with "channel layout" --SAW
+#ffpyplayer==4.3.5
+#ffpyplayer
+just_playback
+
+# TESTING NOW...
+cvzone
+#mediapipe
+# mouse
+pyautogui
+
