@@ -4,10 +4,11 @@ from os import mkdir, listdir
 from os.path import join, exists
 from urllib.request import urlretrieve
 import xml.etree.ElementTree as ET
-from subprocess import run, PIPE, Popen
+from subprocess import run, Popen
 import shutil
 from datetime import datetime
 from io import BytesIO
+import tempfile
 
 
 ACKS = 'a'
@@ -18,9 +19,7 @@ DOWNLOADS = 'd'
 PROJECTS = 'p'
 #FOCUS = 'f'
 REPLAYS = 'r'
-TEMP = '/tmp'
-
-NAKED_TEXTS = 'captions.xsl'
+TEMP = tempfile.gettempdir()
 
 
 def get_gfx(filename):
@@ -119,13 +118,14 @@ def add_video_to_library(video, video_id=None):
         with open(xml, 'w') as outfile:
             outfile.write(captions.xml_captions)
 
-        #FIXME - system call to xsltproc
-        text = run(['xsltproc', NAKED_TEXTS, xml], stdout=PIPE, check=True)
-        text = " ".join(text.stdout.decode('utf-8').split())
+        # Replaced system call to xsltproc with Python's built-in XML parser
+        # for cross-platform compatibility. This removes the dependency on xsltproc.
+        root = ET.fromstring(captions.xml_captions)
+        all_text = " ".join(root.itertext())
+        text = " ".join(all_text.split())
 
         captions_id = kdb.insert_captions(video_id, captions, text)
 
-        root = ET.fromstring(captions.xml_captions)
         if root.tag == 'timedtext':
             caps = [ ]
             _recurse_captions_(caps, captions_id, 0, root)
@@ -165,10 +165,26 @@ def extract_audio_from_video(video_id):
     extract_audio(vfn, afn)
 
 def extract_audio(vfn, afn):
+    from moviepy.editor import VideoFileClip
+
     print(f'extracting audio: {afn}')
 
-    #FIXME - system call to ffmpeg
-    run(['ffmpeg', '-n', '-i', vfn, afn], check=True)
+    if exists(afn):
+        print(f'   audio file already exists, skipping: {afn}')
+        return
+
+    # Replaced system call to ffmpeg with moviepy for cross-platform
+    # compatibility. This removes the dependency on a system-installed ffmpeg.
+    try:
+        with VideoFileClip(vfn) as video_clip:
+            if video_clip.audio:
+                # logger=None silences the output from write_audiofile
+                video_clip.audio.write_audiofile(afn, logger=None)
+                print('   extraction complete')
+            else:
+                print(f"   Warning: No audio track found in {vfn}")
+    except Exception as e:
+        print(f"   An error occurred during audio extraction from {vfn}: {e}")
 
 '''
 def focus_peek(me=True, delay=None):
@@ -315,4 +331,3 @@ def load_palette():
         return None
 
     return pygame.image.load(fn)
-

@@ -66,6 +66,7 @@ sqlite3.register_adapter(list, pickle.dumps)
 sqlite3.register_adapter(set, pickle.dumps)
 sqlite3.register_adapter(Store, pickle.dumps)
 sqlite3.register_converter('PICKLE', pickle_loader)
+sqlite3.register_converter("TIMESTAMP", lambda v: datetime.fromisoformat(v.decode()))
 cur = con.cursor()
 #cur.execute('.dbconfig defensive on')
 cur.execute('PRAGMA journal_mode=WAL')
@@ -1572,4 +1573,3 @@ def delete_label_video(label_id, video_id):
 
 
 print('db ready :-)')
-

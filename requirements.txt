@@ -1,17 +1,18 @@
 pygame_gui<=0.6.9
 colorama
 opencv-python
-pytube
+#pytube
+pytubefix
 websockets
 
 # the 4.4.0 and 4.5.0 versions are giving me trouble with "channel layout" --SAW
 #ffpyplayer==4.3.5
 #ffpyplayer
 just_playback
+moviepy==1.0.3
 
 # TESTING NOW...
 cvzone
 #mediapipe
 # mouse
 pyautogui
-

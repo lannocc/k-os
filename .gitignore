@@ -14,7 +14,7 @@ old/
 /p/
 /r/
 
-/chaos.db
+/chaos.db*
 /package-lock.json
 
 /node_modules/
@@ -24,4 +24,7 @@ old/
 /zips/
 /zipver.txt
 /_commands_.txt
+
+/.hg/
+/.hgignore
 

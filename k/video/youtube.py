@@ -2,10 +2,13 @@ from k.ui import *
 import k.db as kdb
 import k.storage as media
 
-from pytube import YouTube, Channel, Playlist, Search
-from pytube.exceptions import *
+#from pytube import YouTube, Channel, Playlist, Search
+from pytubefix import YouTube, Channel, Playlist, Search
+#from pytube.exceptions import *
 
 from urllib.request import urlretrieve
+import tempfile
+from os.path import join
 
 
 YT_RESULT_HEIGHT = 100
@@ -112,8 +115,8 @@ class Panel(KPanel):
             yt = YouTube(url)
             self.show_results([yt])
 
-        except PytubeError:
-            print('check video url')
+        except Exception as e:
+            print(f'check video url: {e}')
 
         self.btn_video.enable()
 
@@ -124,8 +127,8 @@ class Panel(KPanel):
             yt = Channel(url)
             self.show_results(yt.videos)
 
-        except PytubeError:
-            print('check channel url')
+        except Exception as e:
+            print(f'check channel url: {e}')
 
         self.btn_channel.enable()
 
@@ -136,11 +139,8 @@ class Panel(KPanel):
             yt = Playlist(url)
             self.show_results(yt.videos)
 
-        except PytubeError:
-            print('check playlist url')
-
-        except KeyError:
-            print('check playlist url')
+        except Exception as e:
+            print(f'check playlist url: {e}')
 
         self.btn_playlist.enable()
 
@@ -151,8 +151,8 @@ class Panel(KPanel):
             yt = Search(query)
             self.show_results(yt.results)
 
-        except PytubeError:
-            print('something went wrong')
+        except Exception as e:
+            print(f'something went wrong: {e}')
 
         self.btn_search.enable()
 
@@ -191,7 +191,12 @@ class Entry(KPanel):
 
         self.video_id = None
         self.video = video
-        self.thumb = f'/tmp/k-os.thumb-{index}' #FIXME
+
+        # Using bypass_age_gate() can help prevent HTTP 400 errors from pytube
+        # by forcing it to use a different client for fetching video metadata.
+        #self.video.bypass_age_gate()
+
+        self.thumb = join(tempfile.gettempdir(), f'k-os.thumb-{index}')
         urlretrieve(video.thumbnail_url, self.thumb)
 
         self.lbl_name = pygame_gui.elements.UILabel(
@@ -268,4 +273,3 @@ class Entry(KPanel):
             self.btn_add.enable()
             self.btn_add.set_text('!!!')
             raise e
-
