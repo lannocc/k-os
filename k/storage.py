@@ -52,13 +52,15 @@ def copy_thumbnail(video_id, project_id, frag_id):
     shutil.copyfile(src, dst)
 
 def finish_adding_video(video_id):
-    from pytube import YouTube
+    #from pytube import YouTube
+    from pytubefix import YouTube
     video = kdb.get_video(video_id)
     url = 'https://youtu.be/' + video['ytid']
     add_video_to_library(YouTube(url), video_id)
 
 def add_video_to_library(video, video_id=None):
-    from pytube import Channel
+    #from pytube import Channel
+    from pytubefix import Channel
     print(f'add to: {DOWNLOADS}/')
 
     channel_id = kdb.id_channel(video.channel_id)
