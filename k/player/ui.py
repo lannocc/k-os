@@ -207,6 +207,11 @@ class Player(KPanel):
         self.progress.enable()
         self.btn_pp.set_text('PAUSE')
 
+        # User request: ensure volume is reset on play/resume, and music mode override is off
+        if hasattr(self.trk, 'res') and hasattr(self.trk.res, 'audio'):
+            self.trk.res.audio.set_volume(1.0)
+        self.music_mode_override = False
+
         self.trk.play()
         self.playing = True
 
