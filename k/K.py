@@ -16,7 +16,7 @@ from k.replay.ops import *
 import k.online as online
 import k.ack as ack
 import k.player as player
-from k.player.actions import PlayerPause
+from k.player.actions import PlayerPlay, PlayerPause, PlayerSeek
 from k.player.ops import Commands
 import k.player.music as music
 
@@ -85,10 +85,9 @@ class OS:
             self.imagine.start()
 
         # F-Key Audio Loop Tracks state
-        self.f_key_down_time = {}
         self.f_key_loops = {}
-        self.f_key_recording = None
         self.f_key_current_actions = []
+        self.f_key_capturing = False
 
         # Auto-Tune Music Mode
         self.music = music.Mode(self)
@@ -153,6 +152,17 @@ class OS:
         self.gui = KGUI((WIDTH, HEIGHT - STATUS))
         self.sui = KGUI((WIDTH, STATUS))
         self.lit = [ ]
+
+        # Track indicator
+        self.TRACK_COUNT = 12
+        self.TRACK_W = 17
+        self.TRACKS_W = self.TRACK_W * self.TRACK_COUNT
+        self.TRACKS_H = 22
+        #self.TRACKS_X = (WIDTH - self.TRACKS_W) // 2
+        self.TRACKS_X = 180
+        self.TRACKS_Y = (STATUS - self.TRACKS_H) // 2
+        self.tracks_font = pygame.font.SysFont('monospace', 10, bold=True)
+        self._draw_tracks_surfaces()
 
         self.bg = pygame.Surface((WIDTH, HEIGHT-STATUS))
         self.bg.fill(BLACK)
@@ -250,20 +260,33 @@ class OS:
         self.init_stop = datetime.now()
         self.go = True
 
+    def _draw_tracks_surfaces(self):
+        # Helper to create a complete track bar surface with a given style
+        def create_styled_surface(bg_color, text_color):
+            surface = pygame.Surface((self.TRACKS_W, self.TRACKS_H))
+            surface.fill(bg_color)
+            for i in range(self.TRACK_COUNT):
+                text_surf = self.tracks_font.render(str(i + 1), True, text_color)
+                text_rect = text_surf.get_rect(center=(i * self.TRACK_W + self.TRACK_W / 2, self.TRACKS_H / 2))
+                surface.blit(text_surf, text_rect)
+                if i > 0:
+                    pygame.draw.line(surface, GRAY, (i * self.TRACK_W, 0), (i * self.TRACK_W, self.TRACKS_H))
+            pygame.draw.rect(surface, GRAY, surface.get_rect(), 1)
+            return surface
+
+        # Normal surface (black background, white numbers)
+        self.tracks_surface = create_styled_surface(BLACK, WHITE)
+        # Capturing surface (yellow background, black numbers)
+        self.tracks_surface_capturing = create_styled_surface(YELLOW, BLACK)
+        # Surface for showing enabled tracks (green background, black numbers)
+        self.tracks_surface_green = create_styled_surface(GREEN, BLACK)
+        # Surface for showing disabled but saved tracks (red background, black numbers)
+        self.tracks_surface_red = create_styled_surface(RED, BLACK)
+
+
     def tick(self, gui=True):
         #print('.', end='')
         #sys.stdout.flush()
-
-        # F-Key Audio Loop Tracks state check for starting recording
-        if self.f_key_down_time and self.f_key_recording is None:
-            now = time.perf_counter()
-            for key, down_time in list(self.f_key_down_time.items()):
-                if now - down_time > 0.5:
-                    self.f_key_recording = key
-                    self.f_key_current_actions = [PlayerPause()] # Set start time reference
-                    del self.f_key_down_time[key]
-                    print(f"Recording loop on {pygame.key.name(key)}...")
-                    break
 
         tdelta = self.clock.tick()
 
@@ -361,11 +384,6 @@ class OS:
         elif event.type == pygame.KEYDOWN:
             self.replay_op(KeyDown(event.scancode))
 
-            # F-Key down event for loop tracks
-            if event.key >= pygame.K_F1 and event.key <= pygame.K_F12:
-                if event.key not in self.f_key_down_time: # Avoid auto-repeat
-                    self.f_key_down_time[event.key] = time.perf_counter()
-
             alt = event.mod & pygame.KMOD_ALT
             ctrl = event.mod & pygame.KMOD_CTRL
             shift = event.mod & pygame.KMOD_SHIFT \
@@ -395,8 +413,48 @@ class OS:
                     self.escaping = True
                     self.status('Q')
 
+            elif self.f_key_capturing and event.key >= pygame.K_F1 and event.key <= pygame.K_F12:
+                # Loop capture is finished, calculate duration from now.
+                #self.f_key_current_actions.append(PlayerPause())
+
+                first_action_time = self.f_key_current_actions[0].t
+                last_action_time = time.perf_counter()
+                duration = last_action_time - first_action_time
+
+                # Save captured actions to an F-Key track
+                self.f_key_loops[event.key] = (self.f_key_current_actions, duration)
+                if event.key in self.player.loop_players:
+                    self.player.toggle_loop(event.key, None) # Disable if it was running
+                self.f_key_capturing = False
+                print(f"Loop saved to {pygame.key.name(event.key)}. "
+                      f"({len(self.f_key_current_actions)} actions, duration: {duration:.2f}s)")
+                self.f_key_current_actions = []
+                self.status()
+
             elif event.key == pygame.K_CAPSLOCK:
                 self.music.toggle()
+
+            elif event.key == pygame.K_INSERT:
+                self.f_key_capturing = not self.f_key_capturing
+                if self.f_key_capturing:
+                    # Determine initial state of the player to start recording correctly.
+                    initial_action = PlayerPause()  # Default action
+                    if self.player.players and self.player.players[-1].playing:
+                        active_player = self.player.players[-1]
+                        # Let's use the new method on the player to get/create it.
+                        # This works for both Chaos players and Video players.
+                        frag_id = active_player.get_or_create_frag_id()
+                        if frag_id is not None:
+                            actual_player = getattr(active_player, 'go', active_player)
+                            current_frame = actual_player.trk.frame
+                            initial_action = PlayerPlay(frag_id, start_frame=current_frame)
+
+                    self.f_key_current_actions = [initial_action]
+                    print("Capturing started... Press F1-F12 to save, or INSERT to cancel.")
+                else:  # Cancelled
+                    self.f_key_current_actions = []
+                    print("Capturing cancelled.")
+                self.status()
 
             elif not self.confirming:
                 if self.escaping:
@@ -435,25 +493,6 @@ class OS:
         elif event.type == pygame.KEYUP:
             self.replay_op(KeyUp(event.scancode))
 
-            # F-Key up event for loop tracks
-            if event.key >= pygame.K_F1 and event.key <= pygame.K_F12:
-                down_time = self.f_key_down_time.pop(event.key, None)
-                if down_time:
-                    duration = time.perf_counter() - down_time
-                    if duration < 0.5:  # Short press: toggle loop
-                        if self.f_key_recording == event.key:
-                            self.f_key_recording = None
-                            self.f_key_current_actions = []
-                            print(f"Recording on {pygame.key.name(event.key)} cancelled.")
-                        else:
-                            self.player.toggle_loop(event.key, self.f_key_loops.get(event.key))
-                    else:  # Long press release: save loop
-                        if self.f_key_recording == event.key:
-                            self.f_key_loops[event.key] = self.f_key_current_actions
-                            self.f_key_recording = None
-                            print(f"Loop saved to {pygame.key.name(event.key)}. "
-                                  f"({len(self.f_key_current_actions)} actions)")
-
             if self.panel_home.panel_keys.discover:
                 self.panel_home.panel_keys.keyup(event.key, event.mod)
 
@@ -466,7 +505,11 @@ class OS:
                     self.player.killall()
 
             elif not self.confirming:
-                if self.music.active and self.music.keyup(event.key):
+                if not self.f_key_capturing and event.key >= pygame.K_F1 and event.key <= pygame.K_F12:
+                    # Toggle F-Key loop playback
+                    self.player.toggle_loop(event.key, self.f_key_loops.get(event.key))
+                    self.status()
+                elif self.music.active and self.music.keyup(event.key):
                     # Music mode handled the key, do nothing more.
                     pass
                 else:
@@ -636,6 +679,24 @@ class OS:
 
         bar = pygame.Surface((WIDTH, STATUS))
         self.sui.draw_ui(bar)
+
+        if hasattr(self, 'player'):
+            if self.f_key_capturing:
+                bar.blit(self.tracks_surface_capturing, (self.TRACKS_X, self.TRACKS_Y))
+            else:
+                bar.blit(self.tracks_surface, (self.TRACKS_X, self.TRACKS_Y))
+
+            for i in range(self.TRACK_COUNT):
+                key = pygame.K_F1 + i
+                track_x = self.TRACKS_X + i * self.TRACK_W
+                track_y = self.TRACKS_Y
+                area = pygame.Rect(i * self.TRACK_W, 0, self.TRACK_W, self.TRACKS_H)
+
+                if key in self.player.loop_players:
+                    bar.blit(self.tracks_surface_green, (track_x, track_y), area)
+                elif key in self.f_key_loops:
+                    bar.blit(self.tracks_surface_red, (track_x, track_y), area)
+
 
         lit = self.screen.blit(bar, (0, HEIGHT-STATUS))
         pygame.display.update(lit)

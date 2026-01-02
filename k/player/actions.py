@@ -7,18 +7,25 @@ class PlayerAction(Action):
 
 
 class PlayerPlay(PlayerAction):
-    def __init__(self, frag_id, t=None):
+    def __init__(self, frag_id, start_frame=None, t=None):
         super().__init__(t)
         self.frag_id = frag_id
+        self.start_frame = start_frame
 
     @classmethod
     def parse(cls, t, data_str):
         if data_str is None:
             raise ParseError("PlayerPlay action requires a fragment ID", f"{t}:")
-        return cls(int(data_str), t)
+        parts = data_str.split(',')
+        frag_id = int(parts[0])
+        start_frame = int(parts[1]) if len(parts) > 1 else None
+        return cls(frag_id, start_frame, t)
 
     def format(self, started=None):
-        return super().format(started) + str(self.frag_id)
+        data = super().format(started) + str(self.frag_id)
+        if self.start_frame is not None:
+            data += f',{self.start_frame}'
+        return data
 
 
 class PlayerPause(PlayerAction):
@@ -72,5 +79,3 @@ ACTIONS.extend([
     PlayerStop,
     PlayerSeek,
 ])
-
-

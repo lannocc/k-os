@@ -171,16 +171,37 @@ class Player(KPanel):
 
         super().kill()
 
+    def get_or_create_frag_id(self):
+        """
+        Returns the frag_id if it exists. If not, and if this is a video player,
+        creates a new fragment based on the current loop selection and returns its ID.
+        """
+        frag_id = getattr(self, 'frag_id', None)
+        if frag_id is None:
+            video_id = getattr(self, 'video_id', None)
+            if video_id is not None:
+                # Create an implicit fragment for the current media
+                #start_frame = self.trk.begin + self.loop_begin
+                #end_frame = self.trk.begin + self.loop_end
+                start_frame = self.trk.begin
+                end_frame = self.trk.end
+                frag_id = self.k.frag(kdb.MEDIA_VIDEO, video_id, start_frame, end_frame)
+
+                # Cache it on the player instance to avoid re-creating it
+                self.frag_id = frag_id
+        return frag_id
+
     def play(self):
         if self.playing:
             return
 
-        if self.k.f_key_recording is not None:
+        if self.k.f_key_capturing:
             from k.player.actions import PlayerPlay
             # The action is recorded based on the new state
-            frag_id = getattr(self, 'frag_id', None)
+            frag_id = self.get_or_create_frag_id()
             if frag_id is not None:
-                    self.k.f_key_current_actions.append(PlayerPlay(frag_id))
+                current_frame = self.trk.frame
+                self.k.f_key_current_actions.append(PlayerPlay(frag_id, start_frame=current_frame))
 
         self.op_start()
         self.progress.enable()
@@ -193,7 +214,7 @@ class Player(KPanel):
         if not self.playing:
             return
 
-        if self.k.f_key_recording is not None:
+        if self.k.f_key_capturing:
             from k.player.actions import PlayerPause
             self.k.f_key_current_actions.append(PlayerPause())
 
@@ -207,7 +228,7 @@ class Player(KPanel):
         if self.playing is None:
             return
 
-        if self.k.f_key_recording is not None:
+        if self.k.f_key_capturing:
             from k.player.actions import PlayerStop
             self.k.f_key_current_actions.append(PlayerStop())
 
@@ -218,7 +239,7 @@ class Player(KPanel):
             self.k.replay_break()
 
     def seek(self, frame):
-        if self.k.f_key_recording is not None:
+        if self.k.f_key_capturing:
             from k.player.actions import PlayerSeek
             # Record absolute frame number for the tracker
             self.k.f_key_current_actions.append(PlayerSeek(frame + self.trk.begin))
@@ -367,7 +388,7 @@ class Player(KPanel):
     def click(self, element, target=None):
         if element is self.btn_pp:
             self.pause() if self.playing else self.play()
-            if self.k.f_key_recording is not None:
+            if self.k.f_key_capturing:
                 from k.player.actions import PlayerPlay, PlayerPause
                 # The action is recorded based on the new state
                 if self.playing:
@@ -871,4 +892,3 @@ class Jumps(KPanel):
             manager=self.k.gui,
             container=self.container,
             relative_rect=pygame.Rect((0, 0), (-1, -1)))
-

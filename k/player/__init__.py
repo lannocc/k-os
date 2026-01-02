@@ -127,14 +127,15 @@ class Stack():
         for player in self.loop_players.values():
             player.tick()
 
-    def toggle_loop(self, key, actions):
+    def toggle_loop(self, key, loop_data):
         key_name = pygame.key.name(key).upper()
         if key in self.loop_players:
             self.loop_players[key].kill()
             del self.loop_players[key]
             print(f"Loop {key_name} disabled.")
-        elif actions:
-            player = LoopPlayer(self.k, key, actions)
+        elif loop_data:
+            actions, duration = loop_data
+            player = LoopPlayer(self.k, key, actions, duration)
             self.loop_players[key] = player
             player.play()
             print(f"Loop {key_name} enabled.")

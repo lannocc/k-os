@@ -251,3 +251,85 @@ class Void(Resource):
 
     def stop(self):
         pass
+
+
+class HeadlessPlayer:
+    """A non-UI, audio-only player for a single fragment."""
+    def __init__(self, k, frag_id):
+        self.k = k
+        self.frag_id = frag_id
+        self.playing = None
+        self.trk = None
+        print(f"    [HeadlessPlayer] Initializing for frag {self.frag_id}")
+        
+        try:
+            frag = kdb.get_frag(self.frag_id)
+            frag_type = frag['media']
+            source = frag['source']
+            start = frag['start']
+            stop = frag['stop']
+
+            if frag_type == kdb.MEDIA_VIDEO:
+                # TODO: This creates a new Resource for every loop player.
+                # A shared resource cache would be more efficient to avoid
+                # reloading the same audio file multiple times. For now,
+                # this is functionally correct.
+                res = Resource(source, imagine=None, audio_only=True)
+                self.trk = Tracker(res, begin=start, end=stop)
+                print(f"    [HeadlessPlayer] Successfully initialized.")
+            else:
+                # Silently fail for unsupported media, as this is a background player
+                print(f'LoopPlayer: frag {frag_id} has unsupported media type: {frag_type}')
+
+        except Exception as e:
+            print(f'!!! HeadlessPlayer failed to init for frag {frag_id}: {e}')
+            self.trk = None
+
+    def play(self):
+        if self.playing or not self.trk:
+            return
+        print(f"    [HeadlessPlayer] Play called for frag {self.frag_id}")
+        self.trk.play()
+        self.playing = True
+
+    def pause(self):
+        if self.playing is False or not self.trk:
+            return
+        print(f"    [HeadlessPlayer] Pause called for frag {self.frag_id}")
+        self.trk.pause()
+        self.playing = False
+
+    def stop(self):
+        if self.playing is None or not self.trk:
+            return
+        print(f"    [HeadlessPlayer] Stop called for frag {self.frag_id}")
+        self.trk.stop()
+        self.playing = None
+    
+    def seek(self, frame):
+        if not self.trk:
+            return
+        # The frame for seek is recorded from the main player's tracker.
+        # Tracker.seek handles clamping it to its own begin/end bounds.
+        self.trk.seek(frame)
+
+    def tick(self):
+        """ This is the audio-only tick, delegating to the now audio-safe Tracker. """
+        if self.playing is None or not self.trk:
+            return None # Finished or failed
+        
+        # Rely on the canonical Tracker.tick(), which is now safe for audio-only resources.
+        tock = self.trk.tick()
+        
+        # Sync our state with the tracker's state after the tick.
+        self.playing = self.trk.playing
+
+        # A return value of None from trk.tick() signifies the tracker has finished and reset.
+        return tock
+
+    def kill(self, replace=False):
+        print(f"    [HeadlessPlayer] Kill called for frag {self.frag_id}")
+        if self.trk:
+            self.stop()
+            self.trk.res.kill()
+            self.trk = None

@@ -22,9 +22,10 @@ def get_size_to_fit(orig_size, fit_size):
 
 
 class Resource():
-    def __init__(self, video_id, imagine=None):
+    def __init__(self, video_id, imagine=None, audio_only=False):
         self.video_id = video_id
         self.ie = imagine
+        self.audio_only = audio_only
 
         video = kdb.get_video(video_id)
         channel = kdb.get_channel(video['channel'])
@@ -32,9 +33,19 @@ class Resource():
 
         self.vfn = media.get_video_filename(channel['ytid'], video['ytid'],
             stream['itag'], stream['subtype'])
-        print(f'loading video resource: {self.vfn}')
+        print(f'loading video resource: {self.vfn} (audio_only={self.audio_only})')
 
-        if self.ie:
+        if self.audio_only:
+            self.ie = None
+            # For audio-only, we still need metadata from the video file.
+            video_capture = cv2.VideoCapture(self.vfn)
+            self.frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+            self.fps = video_capture.get(cv2.CAP_PROP_FPS)
+            video_capture.release()
+            self.video = None
+            self.img = None
+            self.size = (0, 0)
+        elif self.ie:
             self.ie.fuel(self)
             self.img = True
 
@@ -52,16 +63,17 @@ class Resource():
         self.frame = 0
 
         self.afn = media.get_audio_filename(channel['ytid'], video['ytid'])
-        print(f'loading audio samples: {self.afn}')
+        print(f'    [Resource] loading audio samples: {self.afn}')
         if not exists(self.afn):
             media.extract_audio(self.vfn, self.afn)
         self.audio = Playback()
         self.audio.load_file(self.afn)
+        print(f'    [Resource] Audio loaded successfully.')
 
     def kill(self):
         if self.ie:
             self.ie.unplug(self)
-        else:
+        elif self.video:
             self.video.release()
         self.audio.stop()
 
@@ -70,21 +82,23 @@ class Resource():
         #    raise ValueError(f'seek to invalid frame: {frame}')
 
         if frame != self.frame:
-            if frame != self.frame + 1:
-                if self.ie:
-                    self.ie.throttle(self, frame)
-                else:
-                    self.video.set(cv2.CAP_PROP_POS_FRAMES, frame)
+            if not self.audio_only:
+                if frame != self.frame + 1:
+                    if self.ie:
+                        self.ie.throttle(self, frame)
+                    else:
+                        self.video.set(cv2.CAP_PROP_POS_FRAMES, frame)
 
             self.frame = frame
 
-            if self.ie:
-                self.ie.rev()
-                self.img = True
-            else:
-                success, self.img = self.video.read()
-                if not success:
-                    raise RuntimeError(f'failed to read video frame: {frame}')
+            if not self.audio_only:
+                if self.ie:
+                    self.ie.rev()
+                    self.img = True
+                else:
+                    success, self.img = self.video.read()
+                    if not success:
+                        raise RuntimeError(f'failed to read video frame: {frame}')
 
         #actual = self.audio.get_time()
         actual = self.audio.curr_pos
@@ -94,7 +108,7 @@ class Resource():
                 print('audio resync')
             self.audio.seek(needed)
 
-        return self.img
+        return True if self.audio_only else self.img
 
     def play(self):
         if self.audio.paused:

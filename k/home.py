@@ -76,7 +76,7 @@ class Panel(KPanel):
             html_text=(INFO+EXTRA+SIGNED).replace('\n', '<br>'),
             manager=k.gui,
             container=self.container,
-            relative_rect=pygame.Rect((9, 234), (WIDTH-PWIDTH-36, 333)))
+            relative_rect=pygame.Rect((9, 234), (WIDTH-PWIDTH-36, 336)))
 
         self.version = pygame_gui.elements.UILabel(
             text=f'v/ {VVHEN}',
