@@ -34,6 +34,7 @@ class Stack():
         self.loop_players = {}
 
         self.players = []
+        self.k.music.clear_cache()
 
     def open(self, player, stacked=False):
         if stacked:

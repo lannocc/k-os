@@ -78,6 +78,18 @@ class Player(KPanel):
             self.loop_begin = 0
             self.loop_end = self.trk.frames - 1
 
+        self.selection_regions = {}
+        self.selection_key_map = {
+            pygame.K_1: '1', pygame.K_2: '2', pygame.K_3: '3', pygame.K_4: '4', pygame.K_5: '5',
+            pygame.K_6: '6', pygame.K_7: '7', pygame.K_8: '8', pygame.K_9: '9', pygame.K_0: '0',
+            pygame.K_BACKQUOTE: '`'
+        }
+        self.selection_slot_order = [
+            pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5,
+            pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9, pygame.K_0
+        ]
+        self.next_selection_slot_index = 0
+
         if jumps:
             self.jumps = [int(j) for j in jumps.split(',')]
         else:
@@ -116,6 +128,12 @@ class Player(KPanel):
         self.music_mode_loop_begin = 0
         self.music_mode_loop_end = 0
 
+        # For hold-to-loop override on number keys
+        self.hold_loop_override = False
+        self.hold_loop_key = None
+        self.hold_loop_begin = 0
+        self.hold_loop_end = 0
+
         self.reset()
 
     def reset(self):
@@ -129,6 +147,8 @@ class Player(KPanel):
         self.pdrag = False
 
         self.music_mode_override = False
+        self.hold_loop_override = False
+        self.hold_loop_key = None
 
         self.trk.reset()
         self.img = None
@@ -209,7 +229,7 @@ class Player(KPanel):
 
         self.trk.seek(frame + self.trk.begin)
 
-        # If music mode is active and controlling the player, seek its audio too.
+        # If music mode is active, load the sample for the selected region.
         if self.k.music.active and self.music_mode_override:
             self.k.music.seek_by_frame(self.trk.frame)
 
@@ -229,6 +249,10 @@ class Player(KPanel):
             if pframe != self.trk.frame - self.trk.begin:
                 #print(f'seeking pframe {pframe}')
                 self.seek(pframe)
+
+            elif self.hold_loop_override and self.playing and not self.pdrag:
+                if pframe < self.hold_loop_begin or pframe > self.hold_loop_end:
+                    self.seek(self.hold_loop_begin)
 
             elif self.music_mode_override and self.playing and not self.pdrag and not self.holding:
                 if pframe < self.music_mode_loop_begin or pframe > self.music_mode_loop_end:
@@ -429,6 +453,59 @@ class Player(KPanel):
 
         nomod = not alt and not ctrl and not shift
 
+        if nomod:
+            if key == pygame.K_SPACE:
+                # Save current selection to next available slot, looping around when full.
+                slot_key = self.selection_slot_order[self.next_selection_slot_index]
+
+                self.selection_regions[slot_key] = (self.loop_begin, self.loop_end)
+                print(f"Selection saved to slot {self.selection_key_map.get(slot_key, slot_key)}")
+
+                # If music mode is active, cache the audio for this new slot
+                if self.k.music.active:
+                    self.k.music.cache_sample_for_slot(slot_key, self)
+
+                self.next_selection_slot_index = (self.next_selection_slot_index + 1) % len(self.selection_slot_order)
+
+                return  # event handled
+
+            elif key in self.selection_slot_order:
+                # If music mode is active, load the sample instead of swapping regions.
+                if self.k.music.active:
+                    if key in self.selection_regions:
+                        self.k.music.load_slotted_sample(key)
+                    else:
+                        print(f"No selection in slot {self.selection_key_map.get(key, key)}")
+
+                # Hold-to-loop on saved selection region, regardless of music mode.
+                if not man and key not in self.holding:
+                    if key in self.selection_regions:
+                        self.hold_loop_override = True
+                        self.hold_loop_key = key
+                        self.hold_loop_begin, self.hold_loop_end = self.selection_regions[key]
+
+                        if self.playing in [None, False]:
+                            self.play()
+
+                        self.seek(self.hold_loop_begin)
+                        self.keyhold(key)  # Use existing hold mechanism to track key release
+                    else:
+                        # Only print if not in music mode, as it's already handled above if active.
+                        if not self.k.music.active:
+                            print(f"No selection in slot {self.selection_key_map.get(key, key)}")
+                return  # event handled
+            elif key == pygame.K_BACKQUOTE:
+                # Load from default slot, swapping with current.
+                if pygame.K_BACKQUOTE in self.selection_regions:
+                    current_selection = (self.loop_begin, self.loop_end)
+                    self.loop_begin, self.loop_end = self.selection_regions[pygame.K_BACKQUOTE]
+                    self.selection_regions[pygame.K_BACKQUOTE] = current_selection
+                    print(f"Swapped current selection with default slot `")
+                    self.draw_loop_bar()
+                else:
+                    print("No selection in default slot `")
+                return  # event handled
+
         if key == pygame.K_KP_ENTER:
             if self.playing:
                 self.pause()
@@ -587,6 +664,10 @@ class Player(KPanel):
 
     def keyup(self, key, mod):
         #print(f'{self.holding} UP {key}')
+
+        if self.hold_loop_override and key == self.hold_loop_key:
+            self.hold_loop_override = False
+            self.hold_loop_key = None
 
         if key == pygame.K_ESCAPE:
             self.k.player.killall()

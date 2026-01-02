@@ -32,6 +32,7 @@ class Mode:
 
         self.active_notes = {}  # {pygame_key: {'channel': Channel, 'start_ticks': int, ...}}
         self.original_volume = None
+        self.slotted_samples = {}
 
         self.ffmpeg_checked = False
         self.ffmpeg_available = False
@@ -41,21 +42,14 @@ class Mode:
         self.key_to_semitone = {
             # High octave (starts at C=0 as requested)
             pygame.K_q: 0,   # C
-            pygame.K_2: 1,   # C#
             pygame.K_w: 2,   # D
-            pygame.K_3: 3,   # D#
             pygame.K_e: 4,   # E
             pygame.K_r: 5,   # F
-            pygame.K_5: 6,   # F#
             pygame.K_t: 7,   # G
-            pygame.K_6: 8,   # G#
             pygame.K_y: 9,   # A
-            pygame.K_7: 10,  # A#
             pygame.K_u: 11,  # B
             pygame.K_i: 12,  # C'
-            pygame.K_9: 13,  # C'#
             pygame.K_o: 14,  # D'
-            pygame.K_0: 15,  # D'#
             pygame.K_p: 16,  # E'
 
             # Low octave (one octave down)
@@ -82,7 +76,7 @@ class Mode:
             self.disengage()
 
         print(f'music mode is {"ON" if self.active else "OFF"}')
-        self.k.status('M' if self.active else 'N')
+        self.k.status('U' if self.active else 'N')
 
     def engage(self):
         """Attempts to capture an audio sample to enable music mode."""
@@ -176,6 +170,13 @@ class Mode:
             print("No active player to capture audio from.")
 
         self.active = success
+        if success:
+            # Pre-cache existing slots after successful engagement
+            print("Pre-caching audio for existing selection slots...")
+            if hasattr(actual_player, 'selection_regions'):
+                for slot_key in actual_player.selection_regions.keys():
+                    self.cache_sample_for_slot(slot_key, actual_player)
+
         if not success:
             self.sample = None
 
@@ -183,6 +184,7 @@ class Mode:
         """Disables music mode and clears the audio sample."""
         self.active = False
         self.sample = None
+        #self.slotted_samples.clear()
         for note_data in self.active_notes.values():
             if note_data['channel']:
                 note_data['channel'].stop()
@@ -196,6 +198,86 @@ class Mode:
                     actual_player.trk.res.audio.set_volume(self.original_volume)
                     actual_player.music_mode_override = False
             self.original_volume = None
+
+    def clear_cache(self):
+        """Clears all cached audio samples."""
+        self.slotted_samples.clear()
+        self.sample = None
+        print("Music mode audio cache cleared.")
+
+    def cache_sample_for_slot(self, slot_key, player_instance):
+        """Caches an audio segment for a given selection slot key."""
+        if not (hasattr(player_instance, 'selection_regions') and slot_key in player_instance.selection_regions):
+            return
+
+        if hasattr(player_instance, 'trk') and player_instance.trk and hasattr(player_instance.trk, 'res'):
+            trk = player_instance.trk
+            res = trk.res
+            afn = res.afn
+            base_fps = res.fps
+
+            loop_begin, loop_end = player_instance.selection_regions[slot_key]
+            start_frame = trk.begin + loop_begin
+            end_frame = trk.begin + loop_end
+
+            # Check if a valid cache for this exact selection already exists.
+            if slot_key in self.slotted_samples:
+                cached_data = self.slotted_samples[slot_key]
+                if cached_data['start_frame'] == start_frame and cached_data['end_frame'] == end_frame:
+                    # The cache is for the same frames, so we assume it's valid.
+                    # The cache is cleared when the player is killed, so we don't need to check afn.
+                    print(f"Audio for slot {pygame.key.name(slot_key)} already cached. Skipping.")
+                    return # Already cached, do nothing.
+
+            start_ms = (start_frame / base_fps) * 1000
+            end_ms = (end_frame / base_fps) * 1000
+
+            try:
+                audio = AudioSegment.from_file(afn)
+                sample = audio[start_ms:end_ms]
+                self.slotted_samples[slot_key] = {
+                    'sample': sample,
+                    'start_frame': start_frame,
+                    'end_frame': end_frame,
+                    'base_fps': base_fps
+                }
+                print(f"Audio for slot {pygame.key.name(slot_key)} cached ({len(sample)}ms).")
+            except (FileNotFoundError, CouldntDecodeError) as e:
+                print(f"ERROR: Could not load or decode audio for slot {pygame.key.name(slot_key)}: {e}")
+            except Exception as e:
+                self.k.bug(e)
+
+    def load_slotted_sample(self, slot_key):
+        """Loads a cached audio sample for music playback."""
+        player = self.k.player.players[-1]
+        actual_player = getattr(player, 'go', player)
+
+        # First, ensure the sample is cached if it's not already.
+        if slot_key not in self.slotted_samples and hasattr(actual_player, 'selection_regions'):
+            if slot_key in actual_player.selection_regions:
+                print(f"Sample for slot {pygame.key.name(slot_key)} not cached. Caching now...")
+                self.cache_sample_for_slot(slot_key, actual_player)
+            else:
+                 print(f"Cannot cache sample for slot {pygame.key.name(slot_key)}: No selection region found.")
+                 return
+
+        # Now, try to load it.
+        if slot_key in self.slotted_samples:
+            data = self.slotted_samples[slot_key]
+            self.sample = data['sample']
+            self.sample_start_frame = data['start_frame']
+            self.sample_end_frame = data['end_frame']
+            self.base_fps = data['base_fps']
+
+            # Stop any currently playing note before swapping
+            for note_data in self.active_notes.values():
+                if note_data['channel']:
+                    note_data['channel'].stop()
+            self.active_notes.clear()
+
+            print(f"Loaded audio sample from slot {pygame.key.name(slot_key)}.")
+        else:
+            print(f"Failed to load audio sample for slot {pygame.key.name(slot_key)}.")
 
     def tick(self):
         """Called every frame. Looping for held notes is now handled by pygame.mixer."""
@@ -249,7 +331,7 @@ class Mode:
 
             final_sample = shifted_sample
             sample_len_ms = len(shifted_sample)
-            
+
             play_from_pos_ms = 0
             if start_ms > 0 and sample_len_ms > 0:
                 play_from_pos_ms = start_ms % sample_len_ms

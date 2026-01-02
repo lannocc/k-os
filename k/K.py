@@ -395,7 +395,7 @@ class OS:
                     self.escaping = True
                     self.status('Q')
 
-            elif event.key == pygame.K_SPACE:
+            elif event.key == pygame.K_CAPSLOCK:
                 self.music.toggle()
 
             elif not self.confirming:
@@ -623,6 +623,8 @@ class OS:
             pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
         elif mode == 'C':
             pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
+        elif mode == 'U':
+            pygame.mouse.set_cursor(*pygame.cursors.arrow)
 
         if mode is not None:
             for status in self.panel_home.status:
