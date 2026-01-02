@@ -208,6 +208,11 @@ class Player(KPanel):
             frame -= 1
 
         self.trk.seek(frame + self.trk.begin)
+
+        # If music mode is active and controlling the player, seek its audio too.
+        if self.k.music.active and self.music_mode_override:
+            self.k.music.seek_by_frame(self.trk.frame)
+
         self.update_frame(frame)
 
         if self.playing and not self.pdrag and self.holding:
