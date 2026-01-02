@@ -134,8 +134,9 @@ class Stack():
             del self.loop_players[key]
             print(f"Loop {key_name} disabled.")
         elif loop_data:
-            actions, duration = loop_data
-            player = LoopPlayer(self.k, key, actions, duration)
+            actions, duration, *music_context = loop_data
+            music_context = music_context[0] if music_context else None
+            player = LoopPlayer(self.k, key, actions, duration, music_context)
             self.loop_players[key] = player
             player.play()
             print(f"Loop {key_name} enabled.")

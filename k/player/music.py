@@ -5,6 +5,7 @@ import io
 import pygame
 import os
 import sys
+import traceback
 
 try:
     from pydub import AudioSegment
@@ -413,6 +414,10 @@ class Mode:
         if key not in self.qwerty_keys or not self.sample or key in self.active_notes:
             return False
 
+        if self.k.f_key_capturing:
+            from k.player.actions import PlayerNoteOn
+            self.k.f_key_current_actions.append(PlayerNoteOn(key))
+
         current_pos_ms = 0
         is_pitch_change = bool(self.active_notes)
 
@@ -467,6 +472,10 @@ class Mode:
     def keyup(self, key):
         """Handles a key release event when music mode is active."""
         if key in self.active_notes:
+            if self.k.f_key_capturing:
+                from k.player.actions import PlayerNoteOff
+                self.k.f_key_current_actions.append(PlayerNoteOff(key))
+
             note_data = self.active_notes.pop(key)
             if note_data['channel']:
                 note_data['channel'].stop()

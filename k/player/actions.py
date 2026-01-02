@@ -67,6 +67,36 @@ class PlayerSeek(PlayerAction):
         return super().format(started) + str(self.frame)
 
 
+class PlayerNoteOn(PlayerAction):
+    def __init__(self, key, t=None):
+        super().__init__(t)
+        self.key = key
+
+    @classmethod
+    def parse(cls, t, data_str):
+        if data_str is None:
+            raise ParseError("PlayerNoteOn action requires a key", f"{t}:")
+        return cls(int(data_str), t)
+
+    def format(self, started=None):
+        return super().format(started) + str(self.key)
+
+
+class PlayerNoteOff(PlayerAction):
+    def __init__(self, key, t=None):
+        super().__init__(t)
+        self.key = key
+
+    @classmethod
+    def parse(cls, t, data_str):
+        if data_str is None:
+            raise ParseError("PlayerNoteOff action requires a key", f"{t}:")
+        return cls(int(data_str), t)
+
+    def format(self, started=None):
+        return super().format(started) + str(self.key)
+
+
 # IMPORTANT:
 # We are extending the main ACTIONS list from replay.ops here.
 # This is a bit of a hack, but it keeps the player-specific actions
@@ -78,4 +108,6 @@ ACTIONS.extend([
     PlayerPause,
     PlayerStop,
     PlayerSeek,
+    PlayerNoteOn,
+    PlayerNoteOff,
 ])

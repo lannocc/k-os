@@ -16,7 +16,7 @@ from k.replay.ops import *
 import k.online as online
 import k.ack as ack
 import k.player as player
-from k.player.actions import PlayerPlay, PlayerPause, PlayerSeek
+from k.player.actions import PlayerPlay, PlayerPause, PlayerSeek, PlayerNoteOn, PlayerNoteOff
 from k.player.ops import Commands
 import k.player.music as music
 
@@ -282,7 +282,8 @@ class OS:
         self.tracks_surface_green = create_styled_surface(GREEN, BLACK)
         # Surface for showing disabled but saved tracks (red background, black numbers)
         self.tracks_surface_red = create_styled_surface(RED, BLACK)
-
+        # Surface for showing about-to-loop tracks (blue background, white text)
+        self.tracks_surface_blue = create_styled_surface(BLUE, WHITE)
 
     def tick(self, gui=True):
         #print('.', end='')
@@ -346,6 +347,7 @@ class OS:
 
         if not self.confirming:
             self.player.tick()
+            self.status()
 
             if self.ack and not self.player.big:
                 self.ack.tick()
@@ -422,7 +424,15 @@ class OS:
                 duration = last_action_time - first_action_time
 
                 # Save captured actions to an F-Key track
-                self.f_key_loops[event.key] = (self.f_key_current_actions, duration)
+                music_context = None
+                if self.music.active and self.music.sample:
+                    music_context = {
+                        'sample': self.music.sample,
+                        'start_frame': self.music.sample_start_frame,
+                        'end_frame': self.music.sample_end_frame,
+                        'base_fps': self.music.base_fps,
+                    }
+                self.f_key_loops[event.key] = (self.f_key_current_actions, duration, music_context)
                 if event.key in self.player.loop_players:
                     self.player.toggle_loop(event.key, None) # Disable if it was running
                 self.f_key_capturing = False
@@ -693,7 +703,11 @@ class OS:
                 area = pygame.Rect(i * self.TRACK_W, 0, self.TRACK_W, self.TRACKS_H)
 
                 if key in self.player.loop_players:
-                    bar.blit(self.tracks_surface_green, (track_x, track_y), area)
+                    loop_player = self.player.loop_players[key]
+                    if loop_player.will_loop:
+                        bar.blit(self.tracks_surface_blue, (track_x, track_y), area)
+                    else:
+                        bar.blit(self.tracks_surface_green, (track_x, track_y), area)
                 elif key in self.f_key_loops:
                     bar.blit(self.tracks_surface_red, (track_x, track_y), area)
 
