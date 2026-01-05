@@ -417,11 +417,60 @@ class OS:
 
             elif self.f_key_capturing and event.key >= pygame.K_F1 and event.key <= pygame.K_F12:
                 # Loop capture is finished, calculate duration from now.
-                #self.f_key_current_actions.append(PlayerPause())
-
                 first_action_time = self.f_key_current_actions[0].t
                 last_action_time = time.perf_counter()
                 duration = last_action_time - first_action_time
+
+                # If other loops are active, conform the duration of this new loop
+                # to maintain rhythmic synchronization.
+                active_loop_players = self.player.loop_players.values()
+                if active_loop_players:
+                    # Ratios derived from user request (multiples of 2 and 3)
+                    # for finding musically-related loop lengths.
+                    ratios = [
+                        1/4, 1/3, 1/2, 2/3, 3/4, 1.0, 4/3, 3/2, 2.0, 3.0, 4.0
+                    ]
+
+                    best_conformed_duration = duration
+                    min_diff = float('inf')
+
+                    # Find the best fit among all active loops and all candidate durations.
+                    for player in active_loop_players:
+                        active_duration = player.duration
+                        if active_duration <= 0:
+                            continue
+
+                        # 1. Check against explicit musical ratios
+                        for ratio in ratios:
+                            candidate_duration = active_duration * ratio
+                            diff = abs(candidate_duration - duration)
+                            if diff < min_diff:
+                                min_diff = diff
+                                best_conformed_duration = candidate_duration
+
+                        # 2. Check against nearest integer multiples/divisions.
+                        # This helps snap to the beat for longer or shorter loops.
+                        if duration > active_duration:
+                            multiple = round(duration / active_duration)
+                            if multiple > 1: # Don't re-check ratio of 1.0
+                                candidate_duration = active_duration * multiple
+                                diff = abs(candidate_duration - duration)
+                                if diff < min_diff:
+                                    min_diff = diff
+                                    best_conformed_duration = candidate_duration
+                        else: # duration <= active_duration
+                            divisor = round(active_duration / duration)
+                            if divisor > 1:
+                                candidate_duration = active_duration / divisor
+                                diff = abs(candidate_duration - duration)
+                                if diff < min_diff:
+                                    min_diff = diff
+                                    best_conformed_duration = candidate_duration
+
+                    # If a better duration was found, use it.
+                    if abs(duration - best_conformed_duration) > 1e-9: # Compare floats carefully
+                        print(f"Loop duration conformed. Original: {duration:.3f}s -> New: {best_conformed_duration:.3f}s")
+                        duration = best_conformed_duration
 
                 # Save captured actions to an F-Key track
                 music_context = None
