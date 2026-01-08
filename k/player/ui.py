@@ -124,6 +124,14 @@ class Player(KPanel):
         self.cur_btn.disable()
         self.cur_panel = self.panel_chaos
 
+        self.playback_direction = 1
+        self.playback_speed = 1.0
+
+        # For temporary fast-forward/rewind
+        self.ff_rew_keys_down = 0
+        self.original_playback_direction = 1
+        self.original_playback_speed = 1.0
+
         # For music mode override
         self.music_mode_override = False
         self.music_mode_loop_begin = 0
@@ -153,9 +161,17 @@ class Player(KPanel):
         self.holding = [ ]
         self.pdrag = False
 
+        self.ff_rew_keys_down = 0
+
         self.music_mode_override = False
         self.hold_loop_override = False
         self.hold_loop_key = None
+        self.playback_direction = 1
+        if hasattr(self.trk, 'set_direction'):
+            self.trk.set_direction(1)
+        self.playback_speed = 1.0
+        if hasattr(self.trk, 'set_speed'):
+            self.trk.set_speed(1.0)
 
         self.volume = 1.0
         if hasattr(self.trk, 'res') and hasattr(self.trk.res, 'audio'):
@@ -336,7 +352,10 @@ class Player(KPanel):
                     or pframe > self.loop_end):
                 #if self.holding == 0:
                 if not self.holding:
-                    self.seek(self.loop_begin)
+                    if self.playback_direction == 1:
+                        self.seek(self.loop_begin)
+                    else:
+                        self.seek(self.loop_end)
 
             tock = self.trk.tick()
 
@@ -491,6 +510,24 @@ class Player(KPanel):
         if self.playing:
             self.op_seek()
 
+    def set_playback_speed(self, speed, direction=None):
+        if direction is None:
+            direction = self.playback_direction
+
+        if self.playback_speed == speed and self.playback_direction == direction:
+            return
+
+        self.playback_speed = speed
+        self.playback_direction = direction
+
+        if hasattr(self.trk, 'set_speed'):
+            self.trk.set_speed(self.playback_speed)
+        if hasattr(self.trk, 'set_direction'):
+            self.trk.set_direction(self.playback_direction)
+
+    def toggle_playback_direction(self):
+        self.set_playback_speed(self.playback_speed, -self.playback_direction)
+
     def keydown(self, key, mod):
         #print(f'{self.holding} DOWN {key}')
         pygame.key.set_repeat(0)
@@ -510,6 +547,28 @@ class Player(KPanel):
                 or mod & pygame.KMOD_RSHIFT
 
         nomod = not alt and not ctrl and not shift
+
+        if nomod and key == pygame.K_SLASH:
+            self.toggle_playback_direction()
+            return
+
+        if nomod and (key == pygame.K_PERIOD or key == pygame.K_COMMA):
+            if self.ff_rew_keys_down == 0:
+                self.original_playback_direction = self.playback_direction
+                self.original_playback_speed = self.playback_speed
+            self.ff_rew_keys_down += 1
+
+            if key == pygame.K_PERIOD:
+                if self.playback_direction == 1:
+                    self.set_playback_speed(2.0, 1)
+                else:  # direction is -1
+                    self.set_playback_speed(1.0, 1)
+            else:  # key == pygame.K_COMMA
+                if self.playback_direction == -1:
+                    self.set_playback_speed(2.0, -1)
+                else:  # direction is 1
+                    self.set_playback_speed(1.0, -1)
+            return
 
         if nomod:
             if key == pygame.K_SPACE:
@@ -733,6 +792,13 @@ class Player(KPanel):
             self.volume_direction = 0
         elif key == pygame.K_PAGEDOWN and self.volume_direction == -1:
             self.volume_direction = 0
+
+        if key == pygame.K_PERIOD or key == pygame.K_COMMA:
+            if self.ff_rew_keys_down > 0:
+                self.ff_rew_keys_down -= 1
+            if self.ff_rew_keys_down == 0:
+                self.set_playback_speed(self.original_playback_speed, self.original_playback_direction)
+            return
 
         if self.hold_loop_override and key == self.hold_loop_key:
             self.hold_loop_override = False

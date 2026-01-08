@@ -22,12 +22,16 @@ class MultiTracker():
             self.frames = end - begin + 1
             self.end = end
 
+        self.direction = 1
+        self.speed = 1.0
         self.reset()
 
     def reset(self):
         self.playing = None
+        self.direction = 1
 
         for offset, trk in self.trks:
+            trk.speed = 1.0
             trk.reset()
 
         self.set_idx(0, True)
@@ -45,6 +49,10 @@ class MultiTracker():
 
         self.idx = idx
         self.offset, self.trk = self.trks[self.idx]
+        if hasattr(self.trk, 'set_direction'):
+            self.trk.set_direction(self.direction)
+        if hasattr(self, 'speed') and hasattr(self.trk, 'set_speed'):
+            self.trk.set_speed(self.speed)
         self.res = self.trk.res
         self.size = self.trk.size
 
@@ -70,6 +78,16 @@ class MultiTracker():
 
         else:
             return None
+
+    def set_direction(self, direction):
+        self.direction = direction
+        if hasattr(self.trk, 'set_direction'):
+            self.trk.set_direction(direction)
+
+    def set_speed(self, speed):
+        self.speed = speed
+        if hasattr(self.trk, 'set_speed'):
+            self.trk.set_speed(speed)
 
     def play(self):
         if self.playing:
@@ -116,16 +134,26 @@ class MultiTracker():
 
         if tock is None:
             #print('no tock')
-            idx = self.idx + 1
-            if idx >= len(self.trks):
-                self.reset()
-            else:
-                self.set_idx(idx)
-                tock = self.trk.tick()
+            if self.direction == 1:
+                idx = self.idx + 1
+                if idx >= len(self.trks):
+                    self.reset()
+                else:
+                    self.set_idx(idx)
+                    tock = self.trk.tick()
+            else:  # self.direction == -1
+                idx = self.idx - 1
+                if idx < 0:
+                    self.reset()
+                else:
+                    self.set_idx(idx)
+                    self.trk.seek(self.trk.end)
+                    tock = self.trk.tick()
 
         if self.playing and tock is not False:
-            self.frame += 1
-            if self.frame > self.end:
+            self.frame += self.direction
+            if (self.direction == 1 and self.frame > self.end) or \
+               (self.direction == -1 and self.frame < self.begin):
                 self.reset()
 
         return tock
@@ -146,6 +174,8 @@ class StaticTracker():
         self.begin = 0
         self.end = self.frames - 1
 
+        self.direction = 1
+        self.speed = 1.0
         self.resize = None
         self.size = self.res.size
         self.reset()
@@ -153,6 +183,8 @@ class StaticTracker():
     def reset(self):
         self.clock = Clock(self.res.fps)
         self.frame = 0
+        self.direction = 1
+        self.speed = 1.0
 
         self.img_orig = None
         self.img = None
@@ -174,6 +206,13 @@ class StaticTracker():
             self.img_orig = img
             self.img = pygame.image.frombuffer(self.img.tobytes(), self.size,
                 "BGR")
+
+    def set_direction(self, direction):
+        self.direction = direction
+
+    def set_speed(self, speed):
+        self.speed = speed
+        self.clock.fps = self.res.fps * speed
 
     def play(self):
         if self.playing:
@@ -213,8 +252,9 @@ class StaticTracker():
             return False
 
         if self.playing:
-            self.frame += 1
-            if self.frame > self.end:
+            self.frame += self.direction
+            if (self.direction == 1 and self.frame > self.end) or \
+               (self.direction == -1 and self.frame < self.begin):
                 self.reset()
 
         return self.img
@@ -242,6 +282,8 @@ class HoldingTracker():
         self.begin = 0
         self.end = self.frames - 1
 
+        self.direction = 1
+        self.speed = 1.0
         self.resize = None
         self.size = self.res.size
         self.reset()
@@ -249,6 +291,11 @@ class HoldingTracker():
     def reset(self):
         self.clock = Clock(self.res.fps)
         self.frame = 0
+        self.direction = 1
+        self.speed = 1.0
+        if hasattr(self.res, 'audio'):
+            # self.res.audio.set_speed(self.speed)
+            pass
 
         self.img_orig = None
         self.img = None
@@ -271,11 +318,22 @@ class HoldingTracker():
             self.img = pygame.image.frombuffer(self.img.tobytes(), self.size,
                 "BGR")
 
+    def set_direction(self, direction):
+        self.direction = direction
+
+    def set_speed(self, speed):
+        self.speed = speed
+        self.clock.fps = self.res.fps * speed
+        if hasattr(self.res, 'audio'):
+            # self.res.audio.set_speed(speed)
+            pass
+
     def play(self):
         if self.playing:
             return
 
         self.clock.reset()
+        self.clock.fps = self.res.fps * self.speed
         self.res.play()
         self.playing = True
 
@@ -312,8 +370,9 @@ class HoldingTracker():
             return False
 
         if self.playing:
-            self.frame += 1
-            if self.frame > self.end:
+            self.frame += self.direction
+            if (self.direction == 1 and self.frame > self.end) or \
+               (self.direction == -1 and self.frame < self.begin):
                 self.reset()
 
         return self.img

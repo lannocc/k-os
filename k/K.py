@@ -891,6 +891,8 @@ class OS:
                 color = GREEN if is_playing else RED
                 volume = getattr(actual_player, 'volume', 0.0)
                 text_color = BLACK
+                direction = getattr(actual_player, 'playback_direction', 1)
+                speed = getattr(actual_player, 'playback_speed', 1.0)
 
                 # Flash blue on seek/jump
                 flash_duration = 0.05 # 50ms
@@ -915,7 +917,11 @@ class OS:
                         bar.fill(color, rect_fill)
 
                 # Redraw text
-                text_surf = self.player_indicator_font.render('>', True, text_color)
+                if direction == 1:
+                    indicator_text = ">>" if speed > 1.0 else ">"
+                else:  # direction == -1
+                    indicator_text = "<<" if speed > 1.0 else "<"
+                text_surf = self.player_indicator_font.render(indicator_text, True, text_color)
                 text_rect = text_surf.get_rect(center=(self.PLAYER_INDICATOR_X + self.PLAYER_INDICATOR_W / 2, self.PLAYER_INDICATOR_Y + self.PLAYER_INDICATOR_H / 2))
                 bar.blit(text_surf, text_rect)
 

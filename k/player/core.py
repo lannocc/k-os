@@ -135,6 +135,8 @@ class Tracker():
             self.frames = end - begin + 1
             self.end = end
 
+        self.direction = 1
+        self.speed = 1.0
         self.resize = None
         self.size = self.res.size
         self.reset()
@@ -143,6 +145,11 @@ class Tracker():
         self.clock = Clock(self.res.fps)
         self.frame = self.begin
         self.seeking = False
+        self.direction = 1
+        self.speed = 1.0
+        if hasattr(self.res, 'audio'):
+            # self.res.audio.set_speed(self.speed)
+            pass
 
         self.img_orig = None
         self.img = None
@@ -150,12 +157,25 @@ class Tracker():
         self.res.stop()
         self.playing = None
 
+    def set_direction(self, direction):
+        self.direction = direction
+
+    def set_speed(self, speed):
+        if self.speed == speed:
+            return
+        self.speed = speed
+        self.clock.fps = self.res.fps * speed
+        if hasattr(self.res, 'audio'):
+            # self.res.audio.set_speed(speed)
+            pass
+
     def play(self):
         if self.playing:
             return
 
         self.clock.reset()
         self.res.play()
+        self.clock.fps = self.res.fps * self.speed
         self.playing = True
 
     def pause(self):
@@ -212,8 +232,9 @@ class Tracker():
                     self.size, "BGR")
 
         if self.playing:
-            self.frame += 1
-            if self.frame > self.end:
+            self.frame += self.direction
+            if (self.direction == 1 and self.frame > self.end) or \
+               (self.direction == -1 and self.frame < self.begin):
                 self.reset()
 
         return self.img
