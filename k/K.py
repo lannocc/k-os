@@ -178,7 +178,7 @@ class OS:
         # Player indicator
         self.PLAYER_INDICATOR_W = self.TRACK_W
         self.PLAYER_INDICATOR_H = self.TRACKS_H
-        self.PLAYER_INDICATOR_X = self.SAMPLES_X + self.SAMPLES_W + 25
+        self.PLAYER_INDICATOR_X = WIDTH - self.PLAYER_INDICATOR_W - 10
         self.PLAYER_INDICATOR_Y = self.TRACKS_Y
         self.player_indicator_font = self.tracks_font
         self._draw_player_indicator_surface()
@@ -527,17 +527,31 @@ class OS:
                     self._find_next_unlocked_f_key_slot()
                     # Determine initial state of the player to start recording correctly.
                     initial_action = PlayerPause()  # Default action
-                    if self.player.players and self.player.players[-1].playing:
-                        active_player = self.player.players[-1]
+                    active_player = self.player.players[-1] if self.player.players else None
+                    actual_player = getattr(active_player, 'go', active_player) if active_player else None
+
+                    if active_player and active_player.playing:
                         # Let's use the new method on the player to get/create it.
                         # This works for both Chaos players and Video players.
                         frag_id = active_player.get_or_create_frag_id()
                         if frag_id is not None:
-                            actual_player = getattr(active_player, 'go', active_player)
                             current_frame = actual_player.trk.frame
                             initial_action = PlayerPlay(frag_id, start_frame=current_frame)
 
                     self.f_key_current_actions = [initial_action]
+
+                    # Capture initial speed/direction
+                    if actual_player:
+                        from k.player.actions import PlayerSetSpeed
+                        speed = getattr(actual_player, 'playback_speed', 1.0)
+                        direction = getattr(actual_player, 'playback_direction', 1)
+                        self.f_key_current_actions.append(PlayerSetSpeed(speed, direction, t=initial_action.t))
+                    
+                    # Also capture any currently held music notes
+                    if self.music.active and self.music.active_notes:
+                        for key in self.music.active_notes.keys():
+                            # Add a NoteOn action with the same timestamp as the initial action
+                            self.f_key_current_actions.append(PlayerNoteOn(key, t=initial_action.t))
                     print("Capturing started... Press F1-F12 or SPACE to save, or INSERT to cancel.")
                 else:  # Cancelled
                     self.f_key_current_actions = []
@@ -869,6 +883,7 @@ class OS:
                 if hasattr(actual_player, 'selection_regions'):
                     selection_regions = actual_player.selection_regions
                     active_slot_key = self.music.active_slot_key if self.music.active else None
+                    notes_are_playing = self.music.active and self.music.active_notes
 
                     sample_keys = [pygame.K_1 + i for i in range(9)] + [pygame.K_0]
                     labels = [str(i) for i in range(1, 10)] + ['0']
@@ -886,7 +901,10 @@ class OS:
                         volume = 0.0
 
                         if key == active_slot_key:
-                            color = GREEN
+                            if notes_are_playing:
+                                color = BLUE
+                            else:
+                                color = GREEN
                             volume = self.music.volume
                         elif region_data:
                             color = RED
@@ -1166,9 +1184,9 @@ class OS:
 
             self.panel_replay.update_timer()
 
-    def replay_break(self):
+    def replay_break(self, synchronous=False):
         if self.replays:
-            self.panel_replay.break_replay()
+            self.panel_replay.break_replay(synchronous=synchronous)
 
     def _find_previous_unlocked_f_key_slot(self):
         """
@@ -1337,7 +1355,7 @@ class OS:
         if not self.go: return
         self.go = False
 
-        self.replay_break()
+        self.replay_break(synchronous=True)
 
         ''' Nope: bad idea... '''
         #for job in self.jobs:

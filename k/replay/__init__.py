@@ -12,10 +12,17 @@ class Panel(KPanel):
     def __init__(self, k, anchors, container=None):
         super().__init__(k, anchors, container)
 
+        samples_end_x = k.SAMPLES_X + k.SAMPLES_W
+        player_indicator_start_x = k.PLAYER_INDICATOR_X
+        available_space = player_indicator_start_x - samples_end_x
+
+        timer_width = 100
+        timer_x = samples_end_x + (available_space - timer_width) // 2
+
         self.lbl_timer = pygame_gui.elements.UILabel(
             text='',
             manager=k.sui,
-            relative_rect=pygame.Rect((WIDTH - 120, 3), (100, -1)))
+            relative_rect=pygame.Rect((timer_x, 3), (timer_width, -1)))
 
         self.btn_library = pygame_gui.elements.UIButton(
             text='Library',
@@ -101,7 +108,7 @@ class Panel(KPanel):
         self.capture = not self.capture
         return self.capture
 
-    def break_replay(self):
+    def break_replay(self, synchronous=False):
         self.k.player.pause()
 
         if not self.clock:
@@ -115,7 +122,10 @@ class Panel(KPanel):
         #print(self.ops)
         #print(Action.format_all(self.ops))
 
-        self.k.job(self._save_replay_)
+        if synchronous:
+            self._save_replay_()
+        else:
+            self.k.job(self._save_replay_)
 
     def _save_replay_(self):
         data = Action.format_all(self.ops, self.start_perf)
@@ -149,4 +159,3 @@ class Panel(KPanel):
 
         else:
             self.cur_panel.click(element, target)
-

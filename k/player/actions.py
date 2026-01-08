@@ -97,6 +97,25 @@ class PlayerNoteOff(PlayerAction):
         return super().format(started) + str(self.key)
 
 
+class PlayerSetSpeed(PlayerAction):
+    def __init__(self, speed, direction, t=None):
+        super().__init__(t)
+        self.speed = speed
+        self.direction = direction
+
+    @classmethod
+    def parse(cls, t, data_str):
+        if data_str is None:
+            raise ParseError("PlayerSetSpeed action requires speed and direction", f"{t}:")
+        parts = data_str.split(',')
+        speed = float(parts[0])
+        direction = int(parts[1])
+        return cls(speed, direction, t)
+
+    def format(self, started=None):
+        return super().format(started) + f"{self.speed},{self.direction}"
+
+
 # IMPORTANT:
 # We are extending the main ACTIONS list from replay.ops here.
 # This is a bit of a hack, but it keeps the player-specific actions
@@ -110,4 +129,5 @@ ACTIONS.extend([
     PlayerSeek,
     PlayerNoteOn,
     PlayerNoteOff,
+    PlayerSetSpeed,
 ])

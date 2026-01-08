@@ -518,6 +518,10 @@ class Player(KPanel):
         if self.playback_speed == speed and self.playback_direction == direction:
             return
 
+        if self.k.f_key_capturing:
+            from k.player.actions import PlayerSetSpeed
+            self.k.f_key_current_actions.append(PlayerSetSpeed(speed, direction))
+
         self.playback_speed = speed
         self.playback_direction = direction
 

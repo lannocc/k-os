@@ -1,7 +1,7 @@
 from k.ui import *
 import time
 from k.replay.ops import Action, PRECISION
-from k.player.actions import PlayerPlay, PlayerPause, PlayerStop, PlayerSeek, PlayerNoteOn, PlayerNoteOff
+from k.player.actions import PlayerPlay, PlayerPause, PlayerStop, PlayerSeek, PlayerNoteOn, PlayerNoteOff, PlayerSetSpeed
 from .frag import HeadlessPlayer
 
 import io
@@ -144,6 +144,8 @@ class LoopPlayer:
         self.loop = True
         self.key_name = pygame.key.name(self.key).upper()
         self.will_loop = False
+        self.speed = 1.0
+        self.direction = 1
 
     def play(self):
         self.action_index = 0
@@ -154,6 +156,8 @@ class LoopPlayer:
         if self.music_player:
             self.music_player.kill()
         self.internal_player_muted = False
+        self.speed = 1.0
+        self.direction = 1
         print(f"[LoopPlayer:{self.key_name}] Starting loop.")
 
     def tick(self):
@@ -214,6 +218,8 @@ class LoopPlayer:
                         self.internal_player = HeadlessPlayer(self.k, action.frag_id, self.volume)
 
                     if self.internal_player and self.internal_player.trk: # Check for successful initialization
+                        self.internal_player.trk.set_speed(self.speed)
+                        self.internal_player.trk.set_direction(self.direction)
                         start_frame = action.start_frame if action.start_frame is not None else self.internal_player.trk.begin
                         self.internal_player.seek(start_frame)
                         self.internal_player.play()
@@ -233,7 +239,12 @@ class LoopPlayer:
                         self.internal_player_muted = False
                         if self.internal_player and self.internal_player.trk:
                             self.internal_player.trk.res.audio.set_volume(self.volume)
-
+                elif isinstance(action, PlayerSetSpeed):
+                    self.speed = action.speed
+                    self.direction = action.direction
+                    if self.internal_player and self.internal_player.trk:
+                        self.internal_player.trk.set_speed(self.speed)
+                        self.internal_player.trk.set_direction(self.direction)
                 elif self.internal_player and self.internal_player.trk:
                     if isinstance(action, PlayerPause):
                         #print("    -> Pausing playback")
