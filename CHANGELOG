@@ -1,5 +1,7 @@
 @%@~LICENSE:OK~@%@
 
+saw_010726_2 - [astrum] Online functionality (broken and not used) removed.
+
 saw_010726_1 - [astrum] Fix PAUSE key causing crash (replay).
 
 saw_010526_1 - [kingofthehill] Let multiple loop tracks sync up together.

@@ -13,7 +13,6 @@ import k.video as video
 import k.project as project
 import k.replay as replay
 from k.replay.ops import *
-import k.online as online
 import k.ack as ack
 import k.player as player
 from k.player.actions import PlayerPlay, PlayerPause, PlayerSeek, PlayerNoteOn, PlayerNoteOff
@@ -34,7 +33,6 @@ class OS:
 
         self.testing = False
         self.imagine = True
-        self.local = False
         self.clock = Clock()
         self.square = False
         self.replays = True
@@ -47,10 +45,6 @@ class OS:
         if OS.dip('1'):
             print('no imagination')
             self.imagine = None
-
-        if OS.dip('2'):
-            print('stay local')
-            self.local = True
 
         if OS.dip('3'):
             print('fps//no limits')
@@ -220,10 +214,6 @@ class OS:
             self.panel_replay = replay.Panel(self,
                 target(self.btn_replay, 'top'))
 
-        if not self.local:
-            self.panel_online = online.Panel(self,
-                target(self.btn_project, 'top'))
-
         self.btn_ack = pygame_gui.elements.UIButton(
             text='', # blank slate (blackboard)
             manager=self.gui,
@@ -341,9 +331,6 @@ class OS:
             if self.confirming is False:
                 self.player.resume()
                 self.confirming = None
-
-        if not self.local:
-            self.panel_online.tick()
 
         if not self.confirming:
             self.player.tick()
@@ -591,9 +578,6 @@ class OS:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             self.replay_op(MouseDown(event.button))
             self.player.mouse_down(event)
-
-            if not self.local:
-                self.panel_online.mouse_button_down(event)
 
         elif event.type == pygame.MOUSEBUTTONUP:
             self.replay_op(MouseUp(event.button))
@@ -983,9 +967,6 @@ class OS:
         self.go = False
 
         self.replay_break()
-
-        if not self.local:
-            self.panel_online.go_offline()
 
         ''' Nope: bad idea... '''
         #for job in self.jobs:

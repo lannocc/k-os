@@ -34,13 +34,12 @@ Examples:: ./start.py
 
     0: No Meta
     1: Single-Threaded (No ImageEngine)
-    2: No Online
     3: No Governor
     4: No Shadow
     6: No Replay
     9: Full-Screen
 
-Examples:: ./start.py 206
+Examples:: ./start.py 406
            python3 start.py 91
 
 
