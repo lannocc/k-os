@@ -526,7 +526,7 @@ class OS:
                 elif event.key == pygame.K_BREAK:
                     if nomod and self.replays:
                         self.replay_break()
-                        self.job(self.panel_replay.refresh)
+                        self.job(self.panel_replay.panel_library.refresh)
 
                 elif event.key == pygame.K_TAB:
                     if shift:
@@ -1009,3 +1009,4 @@ class OS:
 
         #pygame.quit()
         print('graceful death')
+

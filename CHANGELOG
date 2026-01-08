@@ -1,5 +1,7 @@
 @%@~LICENSE:OK~@%@
 
+saw_010726_1 - [astrum] Fix PAUSE key causing crash (replay).
+
 saw_010526_1 - [kingofthehill] Let multiple loop tracks sync up together.
 
 saw_010226_2 - [codebluecam] Improving multitrack loops.

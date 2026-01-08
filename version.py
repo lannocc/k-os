@@ -1,4 +1,4 @@
-VVHEN="1.05 kingofthehill 01+11 /6"
+VVHEN="1.07 astrum 18+30 /6"
 THEY="yahoo.com"
 SAW="LANNOCC"
 ME="shawn"
