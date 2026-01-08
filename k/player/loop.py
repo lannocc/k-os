@@ -15,11 +15,12 @@ except ImportError:
 
 class MicroMusicPlayer:
     """A lightweight, self-contained version of music.Mode for loop playback."""
-    def __init__(self, sample, base_fps, ffmpeg_available):
+    def __init__(self, sample, base_fps, ffmpeg_available, volume=1.0):
         pygame.mixer.init()  # Ensure mixer is ready
         self.sample = sample
         self.base_fps = base_fps
         self.ffmpeg_available = ffmpeg_available
+        self.volume = volume
         self.active_notes = {}
         # This mapping is copied from k/player/music.py
         self.key_to_semitone = {
@@ -81,6 +82,7 @@ class MicroMusicPlayer:
             sound = pygame.mixer.Sound(audio_stream)
             channel = sound.play(loops=-1)
             if channel:
+                channel.set_volume(self.volume)
                 self.active_notes[key] = {
                     'channel': channel, 'start_ticks': pygame.time.get_ticks(),
                     'sample_len_ms': sample_len_ms, 'start_offset_ms': play_from_pos_ms}
@@ -120,11 +122,12 @@ class LoopPlayer:
     A lightweight, audio-only player that consumes a recorded list of actions
     to create a repeatable audio loop.
     """
-    def __init__(self, k, key, actions, duration, music_context=None):
+    def __init__(self, k, key, actions, duration, music_context=None, volume=1.0):
         self.k = k
         self.key = key
         self.actions = list(actions)  # Make a copy
         self.duration = duration
+        self.volume = volume
         self.internal_player_muted = False
         self.internal_player = None
         self.music_player = None
@@ -132,7 +135,8 @@ class LoopPlayer:
             self.music_player = MicroMusicPlayer(
                 music_context['sample'],
                 music_context['base_fps'],
-                k.music.ffmpeg_available
+                k.music.ffmpeg_available,
+                self.volume
             )
         self.action_index = 0
         self.start_time = 0
@@ -207,14 +211,14 @@ class LoopPlayer:
                     if not (self.internal_player and self.internal_player.trk and self.internal_player.frag_id == action.frag_id):
                         if self.internal_player:
                             self.internal_player.kill()
-                        self.internal_player = HeadlessPlayer(self.k, action.frag_id)
+                        self.internal_player = HeadlessPlayer(self.k, action.frag_id, self.volume)
 
                     if self.internal_player and self.internal_player.trk: # Check for successful initialization
                         start_frame = action.start_frame if action.start_frame is not None else self.internal_player.trk.begin
                         self.internal_player.seek(start_frame)
                         self.internal_player.play()
                         # Apply mute state after any player action
-                        self.internal_player.trk.res.audio.set_volume(0.0 if self.internal_player_muted else 1.0)
+                        self.internal_player.trk.res.audio.set_volume(0.0 if self.internal_player_muted else self.volume)
                     else:
                         self.internal_player = None  # Failed to load
                 elif isinstance(action, PlayerNoteOn) and self.music_player:
@@ -228,7 +232,7 @@ class LoopPlayer:
                     if not self.music_player.active_notes:  # Last note was released
                         self.internal_player_muted = False
                         if self.internal_player and self.internal_player.trk:
-                            self.internal_player.trk.res.audio.set_volume(1.0)
+                            self.internal_player.trk.res.audio.set_volume(self.volume)
 
                 elif self.internal_player and self.internal_player.trk:
                     if isinstance(action, PlayerPause):

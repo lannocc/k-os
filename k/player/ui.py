@@ -6,6 +6,7 @@ from k.replay.ops import Action
 from .core import get_size_to_fit
 
 import random
+import time
 
 
 PRECT = pygame.Rect((WIDTH-PWIDTH, 0), (PWIDTH, HEIGHT))
@@ -134,6 +135,12 @@ class Player(KPanel):
         self.hold_loop_begin = 0
         self.hold_loop_end = 0
 
+        # Volume control
+        self.volume = 1.0
+        self.volume_change_rate = 1.0 / 5.0  # Full range in 5 seconds
+        self.volume_direction = 0  # -1 for down, 0 for none, 1 for up
+        self._last_vol_update_time = 0
+
         self.reset()
 
     def reset(self):
@@ -149,6 +156,10 @@ class Player(KPanel):
         self.music_mode_override = False
         self.hold_loop_override = False
         self.hold_loop_key = None
+
+        self.volume = 1.0
+        if hasattr(self.trk, 'res') and hasattr(self.trk.res, 'audio'):
+            self.trk.res.audio.set_volume(self.volume)
 
         self.trk.reset()
         self.img = None
@@ -209,7 +220,9 @@ class Player(KPanel):
 
         # User request: ensure volume is reset on play/resume, and music mode override is off
         if hasattr(self.trk, 'res') and hasattr(self.trk.res, 'audio'):
-            self.trk.res.audio.set_volume(1.0)
+            # On play, ensure current volume is applied, but don't reset to 1.0 unless it's a new clip
+            if not self.k.music.active:
+                 self.trk.res.audio.set_volume(self.volume)
         self.music_mode_override = False
 
         self.trk.play()
@@ -244,6 +257,8 @@ class Player(KPanel):
             self.k.replay_break()
 
     def seek(self, frame):
+        self.k.flash_player_indicator()
+
         if self.k.f_key_capturing:
             from k.player.actions import PlayerSeek
             # Record absolute frame number for the tracker
@@ -269,6 +284,23 @@ class Player(KPanel):
         self.lbl_frame.set_text(str(frame))
 
     def tick(self):
+        if self.volume_direction != 0:
+            now = time.perf_counter()
+            if self._last_vol_update_time == 0:
+                self._last_vol_update_time = now
+
+            tdelta = now - self._last_vol_update_time
+            self._last_vol_update_time = now
+
+            change = self.volume_direction * self.volume_change_rate * tdelta
+            new_volume = max(0.0, min(1.0, self.volume + change))
+            if new_volume != self.volume:
+                self.volume = new_volume
+                if hasattr(self.trk, 'res') and hasattr(self.trk.res, 'audio'):
+                    self.trk.res.audio.set_volume(self.volume)
+        else:
+            self._last_vol_update_time = 0
+
         if self.playing is not None:
             pframe = round(self.progress.get_current_value())
 
@@ -484,7 +516,7 @@ class Player(KPanel):
                 # Save current selection to next available slot, looping around when full.
                 slot_key = self.selection_slot_order[self.next_selection_slot_index]
 
-                self.selection_regions[slot_key] = (self.loop_begin, self.loop_end)
+                self.selection_regions[slot_key] = (self.loop_begin, self.loop_end, self.volume)
                 print(f"Selection saved to slot {self.selection_key_map.get(slot_key, slot_key)}")
 
                 # If music mode is active, cache the audio for this new slot
@@ -508,7 +540,7 @@ class Player(KPanel):
                     if key in self.selection_regions:
                         self.hold_loop_override = True
                         self.hold_loop_key = key
-                        self.hold_loop_begin, self.hold_loop_end = self.selection_regions[key]
+                        self.hold_loop_begin, self.hold_loop_end, *_ = self.selection_regions[key]
 
                         if self.playing in [None, False]:
                             self.play()
@@ -523,14 +555,21 @@ class Player(KPanel):
             elif key == pygame.K_BACKQUOTE:
                 # Load from default slot, swapping with current.
                 if pygame.K_BACKQUOTE in self.selection_regions:
-                    current_selection = (self.loop_begin, self.loop_end)
-                    self.loop_begin, self.loop_end = self.selection_regions[pygame.K_BACKQUOTE]
+                    current_selection = (self.loop_begin, self.loop_end, self.volume)
+                    self.loop_begin, self.loop_end, self.volume = self.selection_regions[pygame.K_BACKQUOTE]
                     self.selection_regions[pygame.K_BACKQUOTE] = current_selection
                     print(f"Swapped current selection with default slot `")
                     self.draw_loop_bar()
                 else:
                     print("No selection in default slot `")
                 return  # event handled
+
+        if key == pygame.K_PAGEUP:
+            self.volume_direction = 1
+            return
+        elif key == pygame.K_PAGEDOWN:
+            self.volume_direction = -1
+            return
 
         if key == pygame.K_KP_ENTER:
             if self.playing:
@@ -690,6 +729,10 @@ class Player(KPanel):
 
     def keyup(self, key, mod):
         #print(f'{self.holding} UP {key}')
+        if key == pygame.K_PAGEUP and self.volume_direction == 1:
+            self.volume_direction = 0
+        elif key == pygame.K_PAGEDOWN and self.volume_direction == -1:
+            self.volume_direction = 0
 
         if self.hold_loop_override and key == self.hold_loop_key:
             self.hold_loop_override = False

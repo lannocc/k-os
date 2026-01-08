@@ -30,6 +30,7 @@ class Mode:
         self.sample_start_frame = 0
         self.sample_end_frame = 0
         self.base_fps = 0
+        self.volume = 1.0
 
         self.active_notes = {}  # {pygame_key: {'channel': Channel, 'start_ticks': int, ...}}
         self.original_volume = None
@@ -152,6 +153,7 @@ class Mode:
 
                 self.sample_start_frame = start_frame
                 self.sample_end_frame = end_frame
+                self.volume = getattr(actual_player, 'volume', 1.0)
 
                 start_ms = (start_frame / self.base_fps) * 1000
                 end_ms = (end_frame / self.base_fps) * 1000
@@ -220,7 +222,10 @@ class Mode:
             afn = res.afn
             base_fps = res.fps
 
-            loop_begin, loop_end = player_instance.selection_regions[slot_key]
+            region_data = player_instance.selection_regions[slot_key]
+            loop_begin, loop_end = region_data[0], region_data[1]
+            volume = region_data[2] if len(region_data) > 2 else 1.0
+
             start_frame = trk.begin + loop_begin
             end_frame = trk.begin + loop_end
 
@@ -243,7 +248,8 @@ class Mode:
                     'sample': sample,
                     'start_frame': start_frame,
                     'end_frame': end_frame,
-                    'base_fps': base_fps
+                    'base_fps': base_fps,
+                    'volume': volume
                 }
                 print(f"Audio for slot {pygame.key.name(slot_key)} cached ({len(sample)}ms).")
             except (FileNotFoundError, CouldntDecodeError) as e:
@@ -272,6 +278,7 @@ class Mode:
             self.sample_start_frame = data['start_frame']
             self.sample_end_frame = data['end_frame']
             self.base_fps = data['base_fps']
+            self.volume = data.get('volume', 1.0)
             self.active_slot_key = slot_key
 
             # Stop any currently playing note before swapping
@@ -353,6 +360,7 @@ class Mode:
             channel = sound.play(loops=-1) # Loop indefinitely until keyup
 
             if channel:
+                channel.set_volume(self.volume)
                 self.active_notes[key] = {
                     'channel': channel,
                     'start_ticks': pygame.time.get_ticks(),
@@ -496,4 +504,3 @@ class Mode:
                 self.original_volume = None
             return True
         return False
-

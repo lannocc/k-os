@@ -255,11 +255,12 @@ class Void(Resource):
 
 class HeadlessPlayer:
     """A non-UI, audio-only player for a single fragment."""
-    def __init__(self, k, frag_id):
+    def __init__(self, k, frag_id, volume=1.0):
         self.k = k
         self.frag_id = frag_id
         self.playing = None
         self.trk = None
+        self.volume = volume
         print(f"    [HeadlessPlayer] Initializing for frag {self.frag_id}")
         
         try:
@@ -276,6 +277,8 @@ class HeadlessPlayer:
                 # this is functionally correct.
                 res = Resource(source, imagine=None, audio_only=True)
                 self.trk = Tracker(res, begin=start, end=stop)
+                if self.trk:
+                    self.trk.res.audio.set_volume(self.volume)
                 print(f"    [HeadlessPlayer] Successfully initialized.")
             else:
                 # Silently fail for unsupported media, as this is a background player

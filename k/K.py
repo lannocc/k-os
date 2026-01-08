@@ -86,6 +86,8 @@ class OS:
         # Auto-Tune Music Mode
         self.music = music.Mode(self)
 
+        self.player_indicator_flash_time = 0
+
         self.init_stop = datetime.now()
 
     @staticmethod
@@ -166,6 +168,14 @@ class OS:
         self.SAMPLES_Y = self.TRACKS_Y
         self.samples_font = self.tracks_font
         self._draw_samples_surfaces()
+
+        # Player indicator
+        self.PLAYER_INDICATOR_W = self.TRACK_W
+        self.PLAYER_INDICATOR_H = self.TRACKS_H
+        self.PLAYER_INDICATOR_X = self.SAMPLES_X + self.SAMPLES_W + 25
+        self.PLAYER_INDICATOR_Y = self.TRACKS_Y
+        self.player_indicator_font = self.tracks_font
+        self._draw_player_indicator_surface()
 
         self.bg = pygame.Surface((WIDTH, HEIGHT-STATUS))
         self.bg.fill(BLACK)
@@ -277,12 +287,6 @@ class OS:
         self.tracks_surface = create_styled_surface(BLACK, WHITE)
         # Capturing surface (yellow background, black numbers)
         self.tracks_surface_capturing = create_styled_surface(YELLOW, BLACK)
-        # Surface for showing enabled tracks (green background, black numbers)
-        self.tracks_surface_green = create_styled_surface(GREEN, BLACK)
-        # Surface for showing disabled but saved tracks (red background, black numbers)
-        self.tracks_surface_red = create_styled_surface(RED, BLACK)
-        # Surface for showing about-to-loop tracks (blue background, white text)
-        self.tracks_surface_blue = create_styled_surface(BLUE, WHITE)
 
     def _draw_samples_surfaces(self):
         # Helper to create a complete samples bar surface with a given style
@@ -301,10 +305,20 @@ class OS:
 
         # Normal surface (black background, white numbers)
         self.samples_surface = create_styled_surface(BLACK, WHITE)
-        # Surface for showing set samples (red background, black numbers)
-        self.samples_surface_red = create_styled_surface(RED, BLACK)
-        # Surface for showing active sample (green background, black numbers)
-        self.samples_surface_green = create_styled_surface(GREEN, BLACK)
+
+    def _draw_player_indicator_surface(self):
+        # Helper to create the player indicator surface
+        def create_surface(bg_color, text_color):
+            surface = pygame.Surface((self.PLAYER_INDICATOR_W, self.PLAYER_INDICATOR_H))
+            surface.fill(bg_color)
+            text_surf = self.player_indicator_font.render('P', True, text_color)
+            text_rect = text_surf.get_rect(center=(self.PLAYER_INDICATOR_W / 2, self.PLAYER_INDICATOR_H / 2))
+            surface.blit(text_surf, text_rect)
+            pygame.draw.rect(surface, GRAY, surface.get_rect(), 1)
+            return surface
+
+        # Normal surface (black background, white text)
+        self.player_indicator_surface = create_surface(BLACK, WHITE)
 
     def tick(self, gui=True):
         #print('.', end='')
@@ -499,12 +513,20 @@ class OS:
                         'end_frame': self.music.sample_end_frame,
                         'base_fps': self.music.base_fps,
                     }
-                self.f_key_loops[event.key] = (self.f_key_current_actions, duration, music_context)
+
+                current_volume = 1.0 # Default
+                if self.player.players:
+                    active_player = self.player.players[-1]
+                    actual_player = getattr(active_player, 'go', active_player)
+                    if hasattr(actual_player, 'volume'):
+                        current_volume = actual_player.volume
+
+                self.f_key_loops[event.key] = (self.f_key_current_actions, duration, music_context, current_volume)
                 if event.key in self.player.loop_players:
                     self.player.toggle_loop(event.key, None) # Disable if it was running
                 self.f_key_capturing = False
                 print(f"Loop saved to {pygame.key.name(event.key)}. "
-                      f"({len(self.f_key_current_actions)} actions, duration: {duration:.2f}s)")
+                      f"({len(self.f_key_current_actions)} actions, duration: {duration:.2f}s, vol: {current_volume:.2f})")
                 self.f_key_current_actions = []
                 self.status()
 
@@ -714,6 +736,9 @@ class OS:
                 else: pygame.display.update(self.lit)
                 self.lit = [ ]
 
+    def flash_player_indicator(self):
+        self.player_indicator_flash_time = time.perf_counter()
+
     def status(self, mode=None):
         update = datetime.now()
 
@@ -765,20 +790,53 @@ class OS:
                 key = pygame.K_F1 + i
                 track_x = self.TRACKS_X + i * self.TRACK_W
                 track_y = self.TRACKS_Y
-                area = pygame.Rect(i * self.TRACK_W, 0, self.TRACK_W, self.TRACKS_H)
+
+                color = None
+                volume = 0.0
 
                 if key in self.player.loop_players:
                     loop_player = self.player.loop_players[key]
+                    volume = loop_player.volume
                     if loop_player.will_loop:
-                        bar.blit(self.tracks_surface_blue, (track_x, track_y), area)
+                        color = BLUE
                     else:
-                        bar.blit(self.tracks_surface_green, (track_x, track_y), area)
+                        color = GREEN
                 elif key in self.f_key_loops:
-                    bar.blit(self.tracks_surface_red, (track_x, track_y), area)
+                    volume = self.f_key_loops[key][3]
+                    color = RED
 
-            # Draw Samples indicator
-            bar.blit(self.samples_surface, (self.SAMPLES_X, self.SAMPLES_Y))
+                if color:
+                    # Draw border for this specific key
+                    key_rect = pygame.Rect(track_x, track_y, self.TRACK_W, self.TRACKS_H)
+                    pygame.draw.rect(bar, color, key_rect, 1)
+
+                    # Draw volume-based background, inside the border
+                    if volume > 0:
+                        # Height is scaled by volume. We subtract 2 to account for 1px top/bottom border.
+                        fill_height = int((self.TRACKS_H - 2) * volume)
+                        if fill_height > 0:
+                            # Position from the bottom up
+                            rect_fill = pygame.Rect(
+                                track_x + 1,
+                                track_y + 1 + (self.TRACKS_H - 2 - fill_height),
+                                self.TRACK_W - 2,
+                                fill_height
+                            )
+                            bar.fill(color, rect_fill)
+
+                    # Determine text color and re-draw text
+                    text_color = WHITE
+                    if color in [GREEN, RED]:
+                        text_color = BLACK
+
+                    text_surf = self.tracks_font.render(str(i + 1), True, text_color)
+                    text_rect = text_surf.get_rect(center=(track_x + self.TRACK_W / 2, track_y + self.TRACKS_H / 2))
+                    bar.blit(text_surf, text_rect)
+
+            # Draw Samples and Player indicators
             if self.player.players:
+                # Draw Samples indicator
+                bar.blit(self.samples_surface, (self.SAMPLES_X, self.SAMPLES_Y))
                 player = self.player.players[-1]
                 actual_player = getattr(player, 'go', player)
 
@@ -787,16 +845,79 @@ class OS:
                     active_slot_key = self.music.active_slot_key if self.music.active else None
 
                     sample_keys = [pygame.K_1 + i for i in range(9)] + [pygame.K_0]
+                    labels = [str(i) for i in range(1, 10)] + ['0']
 
                     for i, key in enumerate(sample_keys):
-                        area = pygame.Rect(i * self.TRACK_W, 0, self.TRACK_W, self.SAMPLES_H)
                         sample_x = self.SAMPLES_X + i * self.TRACK_W
                         sample_y = self.SAMPLES_Y
 
+                        color = None
+                        volume = 0.0
+
                         if key == active_slot_key:
-                            bar.blit(self.samples_surface_green, (sample_x, sample_y), area)
+                            color = GREEN
+                            volume = self.music.volume
                         elif key in selection_regions:
-                            bar.blit(self.samples_surface_red, (sample_x, sample_y), area)
+                            color = RED
+                            region_data = selection_regions[key]
+                            volume = region_data[2] if len(region_data) > 2 else 1.0
+
+                        if color:
+                            # Draw border
+                            key_rect = pygame.Rect(sample_x, sample_y, self.TRACK_W, self.SAMPLES_H)
+                            pygame.draw.rect(bar, color, key_rect, 1)
+
+                            # Draw volume-based background
+                            if volume > 0:
+                                fill_height = int((self.SAMPLES_H - 2) * volume)
+                                if fill_height > 0:
+                                    rect_fill = pygame.Rect(
+                                        sample_x + 1,
+                                        sample_y + 1 + (self.SAMPLES_H - 2 - fill_height),
+                                        self.TRACK_W - 2,
+                                        fill_height
+                                    )
+                                    bar.fill(color, rect_fill)
+
+                            # Redraw text (always black for red/green sample indicators)
+                            text_surf = self.samples_font.render(labels[i], True, BLACK)
+                            text_rect = text_surf.get_rect(center=(sample_x + self.TRACK_W / 2, sample_y + self.SAMPLES_H / 2))
+                            bar.blit(text_surf, text_rect)
+
+                # Draw Player indicator
+                bar.blit(self.player_indicator_surface, (self.PLAYER_INDICATOR_X, self.PLAYER_INDICATOR_Y))
+
+                is_playing = getattr(actual_player, 'playing', None)
+                color = GREEN if is_playing else RED
+                volume = getattr(actual_player, 'volume', 0.0)
+                text_color = BLACK
+
+                # Flash blue on seek/jump
+                flash_duration = 0.05 # 50ms
+                if time.perf_counter() - self.player_indicator_flash_time < flash_duration:
+                    color = BLUE
+                    text_color = WHITE
+
+                # Draw border
+                key_rect = pygame.Rect(self.PLAYER_INDICATOR_X, self.PLAYER_INDICATOR_Y, self.PLAYER_INDICATOR_W, self.PLAYER_INDICATOR_H)
+                pygame.draw.rect(bar, color, key_rect, 1)
+
+                # Draw volume-based background
+                if volume > 0:
+                    fill_height = int((self.PLAYER_INDICATOR_H - 2) * volume)
+                    if fill_height > 0:
+                        rect_fill = pygame.Rect(
+                            self.PLAYER_INDICATOR_X + 1,
+                            self.PLAYER_INDICATOR_Y + 1 + (self.PLAYER_INDICATOR_H - 2 - fill_height),
+                            self.PLAYER_INDICATOR_W - 2,
+                            fill_height
+                        )
+                        bar.fill(color, rect_fill)
+
+                # Redraw text
+                text_surf = self.player_indicator_font.render('>', True, text_color)
+                text_rect = text_surf.get_rect(center=(self.PLAYER_INDICATOR_X + self.PLAYER_INDICATOR_W / 2, self.PLAYER_INDICATOR_Y + self.PLAYER_INDICATOR_H / 2))
+                bar.blit(text_surf, text_rect)
 
 
         lit = self.screen.blit(bar, (0, HEIGHT-STATUS))
