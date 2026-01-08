@@ -151,7 +151,18 @@ class Stack():
         if not force and not self.big:
             return
 
-        self.k.blit(self.bigbg, (0, 0))
+        # This is a one-time operation to clear any artifacts from large video mode.
+        # First, blit the standard UI background, which covers the main application area.
+        # This correctly paints the player area black, fixing artifacts within it.
+        self.k.blit(self.k.bg, (0, 0))
+
+        # If in fullscreen, the screen might be wider than the standard UI.
+        # We must also clear the area to the right of the main UI.
+        screen_w = self.k.screen.get_width()
+        if screen_w > WIDTH:
+            clear_surf = pygame.Surface((screen_w - WIDTH, HEIGHT - STATUS))
+            clear_surf.fill(BLACK)
+            self.k.blit(clear_surf, (WIDTH, 0))
 
         for player in self.players:
             player.size_to_fit(PWIDTH, PHEIGHT)

@@ -1,5 +1,7 @@
 @%@~LICENSE:OK~@%@
 
+saw_010726_3 - [astrum] Player size_normal fixing and relocate replay timer.
+
 saw_010726_2 - [astrum] Online functionality (broken and not used) removed.
 
 saw_010726_1 - [astrum] Fix PAUSE key causing crash (replay).

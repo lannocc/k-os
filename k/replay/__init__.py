@@ -15,7 +15,7 @@ class Panel(KPanel):
         self.lbl_timer = pygame_gui.elements.UILabel(
             text='',
             manager=k.sui,
-            relative_rect=pygame.Rect((WIDTH/2 + 180, 3), (100, -1)))
+            relative_rect=pygame.Rect((WIDTH - 120, 3), (100, -1)))
 
         self.btn_library = pygame_gui.elements.UIButton(
             text='Library',
