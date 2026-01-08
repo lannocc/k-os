@@ -90,6 +90,7 @@ class Player(KPanel):
             pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9, pygame.K_0
         ]
         self.next_selection_slot_index = 0
+        #self._find_next_unlocked_slot()
 
         if jumps:
             self.jumps = [int(j) for j in jumps.split(',')]
@@ -546,6 +547,39 @@ class Player(KPanel):
             shift = mod & pygame.KMOD_SHIFT or mod & pygame.KMOD_LSHIFT \
                 or mod & pygame.KMOD_RSHIFT
 
+        if ctrl and not shift and not alt:
+            if key in self.selection_slot_order:
+                if key in self.selection_regions:
+                    region = list(self.selection_regions[key])
+                    # Ensure region data has 4 elements (loop_begin, loop_end, volume, locked)
+                    while len(region) < 4:
+                        region.append(False)  # Add default values if missing
+                    was_locked = region[3]
+                    region[3] = not was_locked  # Toggle locked state
+                    self.selection_regions[key] = tuple(region)
+                    state = "locked" if region[3] else "unlocked"
+                    print(f"Sample slot {self.selection_key_map.get(key, key)} is now {state}.")
+
+                    if was_locked: # Just unlocked it
+                        # If all other slots are locked, this becomes the new target
+                        all_others_locked = True
+                        for other_key in self.selection_slot_order:
+                            if other_key == key: continue
+                            other_region = self.selection_regions.get(other_key)
+                            if not (other_region and len(other_region) > 3 and other_region[3]):
+                                all_others_locked = False
+                                break
+                        if all_others_locked:
+                            self.next_selection_slot_index = self.selection_slot_order.index(key)
+                            print(f"Only available slot {self.selection_key_map.get(key, key)} is now the target.")
+                    else: # Just locked it
+                        # If the currently targeted slot was just locked, find a new target.
+                        if self.selection_slot_order[self.next_selection_slot_index] == key:
+                            self._find_next_unlocked_slot()
+                else:
+                    print(f"No selection in slot {self.selection_key_map.get(key, key)} to lock.")
+                return True
+
         nomod = not alt and not ctrl and not shift
 
         if nomod and key == pygame.K_SLASH:
@@ -575,16 +609,21 @@ class Player(KPanel):
                 # Save current selection to next available slot, looping around when full.
                 slot_key = self.selection_slot_order[self.next_selection_slot_index]
 
-                self.selection_regions[slot_key] = (self.loop_begin, self.loop_end, self.volume)
+                region_data = self.selection_regions.get(slot_key)
+                if region_data and len(region_data) > 3 and region_data[3]:
+                    print(f"Cannot save: Target slot {self.selection_key_map.get(slot_key, slot_key)} is locked.")
+                    return True  # event handled
+
+                self.selection_regions[slot_key] = (self.loop_begin, self.loop_end, self.volume, False)
                 print(f"Selection saved to slot {self.selection_key_map.get(slot_key, slot_key)}")
 
                 # If music mode is active, cache the audio for this new slot
                 if self.k.music.active:
                     self.k.music.cache_sample_for_slot(slot_key, self)
 
-                self.next_selection_slot_index = (self.next_selection_slot_index + 1) % len(self.selection_slot_order)
+                self._find_next_unlocked_slot()
 
-                return  # event handled
+                return True  # event handled
 
             elif key in self.selection_slot_order:
                 # If music mode is active, load the sample instead of swapping regions.
@@ -788,6 +827,15 @@ class Player(KPanel):
 
     def keyup(self, key, mod):
         #print(f'{self.holding} UP {key}')
+        if key == pygame.K_BACKSPACE:
+            # This handler is called after the OS-level backspace keyup handler.
+            # The k.backspace_action_taken flag is shared state.
+            if not self.k.backspace_action_taken:
+                nomod = not (mod & pygame.KMOD_ALT or mod & pygame.KMOD_CTRL or mod & pygame.KMOD_SHIFT)
+                if nomod:
+                    self._find_previous_unlocked_slot()
+            return
+
         if key == pygame.K_PAGEUP and self.volume_direction == 1:
             self.volume_direction = 0
         elif key == pygame.K_PAGEDOWN and self.volume_direction == -1:
@@ -873,6 +921,41 @@ class Player(KPanel):
 
     def op_unhold(self):
         self.op_start()
+
+    def _find_previous_unlocked_slot(self):
+        """Finds the previous available (unlocked) selection slot and updates self.next_selection_slot_index."""
+        num_slots = len(self.selection_slot_order)
+
+        # Start searching from the slot *before* the current one.
+        for i in range(num_slots):
+            check_index = (self.next_selection_slot_index - 1 - i + num_slots) % num_slots
+            slot_key = self.selection_slot_order[check_index]
+
+            region_data = self.selection_regions.get(slot_key)
+            is_locked = region_data and len(region_data) > 3 and region_data[3]
+
+            if not is_locked:
+                self.next_selection_slot_index = check_index
+                return
+
+    def _find_next_unlocked_slot(self):
+        """Finds the next available (unlocked) selection slot and updates self.next_selection_slot_index."""
+        num_slots = len(self.selection_slot_order)
+        
+        # Start searching from the slot *after* the current one.
+        for i in range(num_slots):
+            check_index = (self.next_selection_slot_index + 1 + i) % num_slots
+            slot_key = self.selection_slot_order[check_index]
+            
+            region_data = self.selection_regions.get(slot_key)
+            is_locked = region_data and len(region_data) > 3 and region_data[3]
+            
+            if not is_locked:
+                self.next_selection_slot_index = check_index
+                return
+        
+        # If we get here, all slots are locked. The index doesn't change.
+        # The K_SPACE handler will see the target is locked and fail gracefully.
 
 
 class Chaos(KPanel):

@@ -82,9 +82,15 @@ class OS:
         self.f_key_loops = {}
         self.f_key_current_actions = []
         self.f_key_capturing = False
+        self.f_key_slot_order = [pygame.K_F1 + i for i in range(12)]
+        self.next_f_key_slot_index = 0
 
         # Auto-Tune Music Mode
         self.music = music.Mode(self)
+
+        # Backspace modifier key state
+        self.backspacing = False
+        self.backspace_action_taken = False
 
         self.player_indicator_flash_time = 0
 
@@ -425,8 +431,69 @@ class OS:
                 or event.mod & pygame.KMOD_RSHIFT
             nomod = not alt and not ctrl and not shift
 
+            if self.backspacing:
+                key_handled = False
+                sample_keys = [pygame.K_1 + i for i in range(9)] + [pygame.K_0]
+
+                if event.key in sample_keys:
+                    if self.player.players:
+                        player = self.player.players[-1]
+                        actual_player = getattr(player, 'go', player)
+                        if hasattr(actual_player, 'selection_regions'):
+                            region_data = actual_player.selection_regions.get(event.key)
+                            if region_data:
+                                is_locked = len(region_data) > 3 and region_data[3]
+                                if is_locked:
+                                    print(f"Sample slot {pygame.key.name(event.key)} is locked and cannot be deleted.")
+                                else:
+                                    del actual_player.selection_regions[event.key]
+                                    print(f"Sample in slot {pygame.key.name(event.key)} deleted.")
+                                    if self.music.active and event.key in self.music.slotted_samples:
+                                        del self.music.slotted_samples[event.key]
+                                        print(f"Music cache for slot {pygame.key.name(event.key)} cleared.")
+                            else:
+                                print(f"No sample in slot {pygame.key.name(event.key)} to delete.")
+                    self.backspace_action_taken = True
+                    key_handled = True
+
+                elif event.key >= pygame.K_F1 and event.key <= pygame.K_F12:
+                    if event.key in self.f_key_loops:
+                        loop_data = self.f_key_loops[event.key]
+                        if loop_data.get('locked', False):
+                            print(f"Track {pygame.key.name(event.key).upper()} is locked and cannot be deleted.")
+                        else:
+                            del self.f_key_loops[event.key]
+                            if event.key in self.player.loop_players:
+                                self.player.loop_players[event.key].kill()
+                                del self.player.loop_players[event.key]
+                            print(f"Track {pygame.key.name(event.key).upper()} deleted.")
+                    else:
+                        print(f"No track at {pygame.key.name(event.key).upper()} to delete.")
+                    self.backspace_action_taken = True
+                    key_handled = True
+
+                if key_handled:
+                    return
+
             if self.panel_home.panel_keys.discover:
                 self.panel_home.panel_keys.keydown(event.key, event.mod)
+
+            elif event.key == pygame.K_BACKSPACE:
+                self.backspacing = True
+                self.backspace_action_taken = False
+
+            elif self.f_key_capturing and nomod and event.key == pygame.K_SPACE:
+                self.save_captured_loop_to_next_slot()
+
+            elif ctrl and not alt and not shift and event.key >= pygame.K_F1 and event.key <= pygame.K_F12:
+                if event.key in self.f_key_loops:
+                    loop_data = self.f_key_loops[event.key]
+                    loop_data['locked'] = not loop_data.get('locked', False)
+                    state = "locked" if loop_data['locked'] else "unlocked"
+                    print(f"Track {pygame.key.name(event.key).upper()} is now {state}.")
+                    self._find_next_unlocked_f_key_slot()
+                else:
+                    print(f"No loop saved to {pygame.key.name(event.key).upper()} to lock.")
 
             elif event.key == pygame.K_ESCAPE:
                 if self.player.big:
@@ -448,87 +515,8 @@ class OS:
                     self.status('Q')
 
             elif self.f_key_capturing and event.key >= pygame.K_F1 and event.key <= pygame.K_F12:
-                # Loop capture is finished, calculate duration from now.
-                first_action_time = self.f_key_current_actions[0].t
-                last_action_time = time.perf_counter()
-                duration = last_action_time - first_action_time
-
-                # If other loops are active, conform the duration of this new loop
-                # to maintain rhythmic synchronization.
-                active_loop_players = self.player.loop_players.values()
-                if active_loop_players:
-                    # Ratios derived from user request (multiples of 2 and 3)
-                    # for finding musically-related loop lengths.
-                    ratios = [
-                        1/4, 1/3, 1/2, 2/3, 3/4, 1.0, 4/3, 3/2, 2.0, 3.0, 4.0
-                    ]
-
-                    best_conformed_duration = duration
-                    min_diff = float('inf')
-
-                    # Find the best fit among all active loops and all candidate durations.
-                    for player in active_loop_players:
-                        active_duration = player.duration
-                        if active_duration <= 0:
-                            continue
-
-                        # 1. Check against explicit musical ratios
-                        for ratio in ratios:
-                            candidate_duration = active_duration * ratio
-                            diff = abs(candidate_duration - duration)
-                            if diff < min_diff:
-                                min_diff = diff
-                                best_conformed_duration = candidate_duration
-
-                        # 2. Check against nearest integer multiples/divisions.
-                        # This helps snap to the beat for longer or shorter loops.
-                        if duration > active_duration:
-                            multiple = round(duration / active_duration)
-                            if multiple > 1: # Don't re-check ratio of 1.0
-                                candidate_duration = active_duration * multiple
-                                diff = abs(candidate_duration - duration)
-                                if diff < min_diff:
-                                    min_diff = diff
-                                    best_conformed_duration = candidate_duration
-                        else: # duration <= active_duration
-                            divisor = round(active_duration / duration)
-                            if divisor > 1:
-                                candidate_duration = active_duration / divisor
-                                diff = abs(candidate_duration - duration)
-                                if diff < min_diff:
-                                    min_diff = diff
-                                    best_conformed_duration = candidate_duration
-
-                    # If a better duration was found, use it.
-                    if abs(duration - best_conformed_duration) > 1e-9: # Compare floats carefully
-                        print(f"Loop duration conformed. Original: {duration:.3f}s -> New: {best_conformed_duration:.3f}s")
-                        duration = best_conformed_duration
-
-                # Save captured actions to an F-Key track
-                music_context = None
-                if self.music.active and self.music.sample:
-                    music_context = {
-                        'sample': self.music.sample,
-                        'start_frame': self.music.sample_start_frame,
-                        'end_frame': self.music.sample_end_frame,
-                        'base_fps': self.music.base_fps,
-                    }
-
-                current_volume = 1.0 # Default
-                if self.player.players:
-                    active_player = self.player.players[-1]
-                    actual_player = getattr(active_player, 'go', active_player)
-                    if hasattr(actual_player, 'volume'):
-                        current_volume = actual_player.volume
-
-                self.f_key_loops[event.key] = (self.f_key_current_actions, duration, music_context, current_volume)
-                if event.key in self.player.loop_players:
-                    self.player.toggle_loop(event.key, None) # Disable if it was running
-                self.f_key_capturing = False
-                print(f"Loop saved to {pygame.key.name(event.key)}. "
-                      f"({len(self.f_key_current_actions)} actions, duration: {duration:.2f}s, vol: {current_volume:.2f})")
-                self.f_key_current_actions = []
-                self.status()
+                should_advance = (self.f_key_slot_order[self.next_f_key_slot_index] == event.key)
+                self.save_captured_loop_to_slot(event.key, advance_pointer=should_advance)
 
             elif event.key == pygame.K_CAPSLOCK:
                 self.music.toggle()
@@ -536,6 +524,7 @@ class OS:
             elif event.key == pygame.K_INSERT:
                 self.f_key_capturing = not self.f_key_capturing
                 if self.f_key_capturing:
+                    self._find_next_unlocked_f_key_slot()
                     # Determine initial state of the player to start recording correctly.
                     initial_action = PlayerPause()  # Default action
                     if self.player.players and self.player.players[-1].playing:
@@ -549,7 +538,7 @@ class OS:
                             initial_action = PlayerPlay(frag_id, start_frame=current_frame)
 
                     self.f_key_current_actions = [initial_action]
-                    print("Capturing started... Press F1-F12 to save, or INSERT to cancel.")
+                    print("Capturing started... Press F1-F12 or SPACE to save, or INSERT to cancel.")
                 else:  # Cancelled
                     self.f_key_current_actions = []
                     print("Capturing cancelled.")
@@ -562,6 +551,11 @@ class OS:
 
                 elif self.closing:
                     self.closing = False
+
+                elif nomod and not self.f_key_capturing and event.key >= pygame.K_F1 and event.key <= pygame.K_F12:
+                    # Toggle F-Key loop playback
+                    self.player.toggle_loop(event.key, self.f_key_loops.get(event.key))
+                    self.status()
 
                 elif event.key == pygame.K_BREAK:
                     if nomod and self.replays:
@@ -595,6 +589,19 @@ class OS:
             if self.panel_home.panel_keys.discover:
                 self.panel_home.panel_keys.keyup(event.key, event.mod)
 
+            elif event.key == pygame.K_BACKSPACE:
+                if self.backspacing:
+                    self.backspacing = False
+                    if not self.backspace_action_taken:
+                        nomod = not (event.mod & pygame.KMOD_ALT or event.mod & pygame.KMOD_CTRL or event.mod & pygame.KMOD_SHIFT)
+                        if self.f_key_capturing and nomod:
+                            self._find_previous_unlocked_f_key_slot()
+                        elif not self.f_key_capturing and nomod and self.player.players:
+                            player = self.player.players[-1]
+                            actual_player = getattr(player, 'go', player)
+                            if hasattr(actual_player, '_find_previous_unlocked_slot'):
+                                actual_player._find_previous_unlocked_slot()
+
             elif event.key == pygame.K_ESCAPE:
                 if self.escaping:
                     #self.go = False
@@ -604,11 +611,7 @@ class OS:
                     self.player.killall()
 
             elif not self.confirming:
-                if not self.f_key_capturing and event.key >= pygame.K_F1 and event.key <= pygame.K_F12:
-                    # Toggle F-Key loop playback
-                    self.player.toggle_loop(event.key, self.f_key_loops.get(event.key))
-                    self.status()
-                elif self.music.active and self.music.keyup(event.key):
+                if self.music.active and self.music.keyup(event.key):
                     # Music mode handled the key, do nothing more.
                     pass
                 else:
@@ -783,13 +786,32 @@ class OS:
             # Draw F-Key Tracks indicator
             if self.f_key_capturing:
                 bar.blit(self.tracks_surface_capturing, (self.TRACKS_X, self.TRACKS_Y))
+                # Draw line above to indicate capture mode is active
+                line_y = self.TRACKS_Y - 2
+                pygame.draw.line(bar, YELLOW, (self.TRACKS_X, line_y), (self.TRACKS_X + self.TRACKS_W - 1, line_y), 2)
             else:
                 bar.blit(self.tracks_surface, (self.TRACKS_X, self.TRACKS_Y))
+
+            # Draw target indicator for next save slot
+            if hasattr(self, 'next_f_key_slot_index'):
+                target_index = self.next_f_key_slot_index
+                track_x = self.TRACKS_X + target_index * self.TRACK_W
+                track_y = self.TRACKS_Y
+                line_y = track_y + self.TRACKS_H + 1
+                pygame.draw.line(bar, YELLOW, (track_x, line_y), (track_x + self.TRACK_W - 1, line_y), 2)
+
 
             for i in range(self.TRACK_COUNT):
                 key = pygame.K_F1 + i
                 track_x = self.TRACKS_X + i * self.TRACK_W
                 track_y = self.TRACKS_Y
+
+                is_locked = key in self.f_key_loops and self.f_key_loops[key].get('locked', False)
+
+                if self.f_key_capturing and is_locked:
+                    # Revert this slot to its normal (non-capturing) appearance
+                    slot_rect_in_surface = pygame.Rect(i * self.TRACK_W, 0, self.TRACK_W, self.TRACKS_H)
+                    bar.blit(self.tracks_surface, (track_x, track_y), area=slot_rect_in_surface)
 
                 color = None
                 volume = 0.0
@@ -802,7 +824,7 @@ class OS:
                     else:
                         color = GREEN
                 elif key in self.f_key_loops:
-                    volume = self.f_key_loops[key][3]
+                    volume = self.f_key_loops[key]['volume']
                     color = RED
 
                 if color:
@@ -833,6 +855,10 @@ class OS:
                     text_rect = text_surf.get_rect(center=(track_x + self.TRACK_W / 2, track_y + self.TRACKS_H / 2))
                     bar.blit(text_surf, text_rect)
 
+                if is_locked:
+                    line_y = track_y + self.TRACKS_H + 1
+                    pygame.draw.line(bar, BLUE, (track_x, line_y), (track_x + self.TRACK_W - 1, line_y), 2)
+
             # Draw Samples and Player indicators
             if self.player.players:
                 # Draw Samples indicator
@@ -847,19 +873,23 @@ class OS:
                     sample_keys = [pygame.K_1 + i for i in range(9)] + [pygame.K_0]
                     labels = [str(i) for i in range(1, 10)] + ['0']
 
+                    # Get the next target slot for saving a selection
+                    next_slot_index = getattr(actual_player, 'next_selection_slot_index', -1)
+
                     for i, key in enumerate(sample_keys):
                         sample_x = self.SAMPLES_X + i * self.TRACK_W
                         sample_y = self.SAMPLES_Y
 
+                        region_data = selection_regions.get(key)
+                        is_locked = region_data and len(region_data) > 3 and region_data[3]
                         color = None
                         volume = 0.0
 
                         if key == active_slot_key:
                             color = GREEN
                             volume = self.music.volume
-                        elif key in selection_regions:
+                        elif region_data:
                             color = RED
-                            region_data = selection_regions[key]
                             volume = region_data[2] if len(region_data) > 2 else 1.0
 
                         if color:
@@ -883,6 +913,15 @@ class OS:
                             text_surf = self.samples_font.render(labels[i], True, BLACK)
                             text_rect = text_surf.get_rect(center=(sample_x + self.TRACK_W / 2, sample_y + self.SAMPLES_H / 2))
                             bar.blit(text_surf, text_rect)
+
+                        # Draw the target indicator for the next save slot
+                        if i == next_slot_index:
+                            line_y = sample_y + self.SAMPLES_H + 1
+                            pygame.draw.line(bar, YELLOW, (sample_x, line_y), (sample_x + self.TRACK_W - 1, line_y), 2)
+
+                        if is_locked:
+                            line_y = sample_y + self.SAMPLES_H + 1
+                            pygame.draw.line(bar, BLUE, (sample_x, line_y), (sample_x + self.TRACK_W - 1, line_y), 2)
 
                 # Draw Player indicator
                 bar.blit(self.player_indicator_surface, (self.PLAYER_INDICATOR_X, self.PLAYER_INDICATOR_Y))
@@ -1130,6 +1169,157 @@ class OS:
     def replay_break(self):
         if self.replays:
             self.panel_replay.break_replay()
+
+    def _find_previous_unlocked_f_key_slot(self):
+        """
+        Finds the previous unlocked F-key slot and updates self.next_f_key_slot_index.
+        """
+        num_slots = len(self.f_key_slot_order)
+        # Start searching from the slot *before* the current one.
+        for i in range(num_slots):
+            check_index = (self.next_f_key_slot_index - 1 - i + num_slots) % num_slots
+            slot_key = self.f_key_slot_order[check_index]
+
+            loop_data = self.f_key_loops.get(slot_key)
+            is_locked = loop_data and loop_data.get('locked', False)
+
+            if not is_locked:
+                self.next_f_key_slot_index = check_index
+                return
+
+    def _find_next_unlocked_f_key_slot(self, advance=False):
+        """
+        Finds an unlocked F-key slot and updates self.next_f_key_slot_index.
+        If `advance` is True, it forces finding the *next* available slot after the current one.
+        Otherwise, it checks if the current slot is still valid (unlocked), and only advances if it's locked.
+        """
+        num_slots = len(self.f_key_slot_order)
+        start_offset = 1 if advance else 0
+
+        # Start searching. With advance=False, the loop will check the current slot first.
+        # With advance=True, it will start checking from the one after.
+        for i in range(num_slots):
+            check_index = (self.next_f_key_slot_index + start_offset + i) % num_slots
+            slot_key = self.f_key_slot_order[check_index]
+
+            loop_data = self.f_key_loops.get(slot_key)
+            is_locked = loop_data and loop_data.get('locked', False)
+
+            if not is_locked:
+                self.next_f_key_slot_index = check_index
+                return
+
+        # If we get here, all slots are locked. The index doesn't change.
+        # The save handler will see the target is locked and fail gracefully.
+
+    def save_captured_loop_to_slot(self, slot_key, advance_pointer=False):
+        """Saves the currently captured loop to a specific F-key slot."""
+        if slot_key in self.f_key_loops and self.f_key_loops[slot_key].get('locked', False):
+            print(f"Track {pygame.key.name(slot_key).upper()} is locked and cannot be overwritten.")
+            return
+
+        # Handle case where INSERT is pressed, then SPACE/F-key with no actions.
+        if not self.f_key_current_actions:
+            print("No actions captured. Cancelling capture.")
+            self.f_key_capturing = False
+            self.f_key_current_actions = []
+            self.status()
+            return
+
+        # Loop capture is finished, calculate duration from now.
+        first_action_time = self.f_key_current_actions[0].t
+        last_action_time = time.perf_counter()
+        duration = last_action_time - first_action_time
+
+        # If other loops are active, conform the duration of this new loop
+        # to maintain rhythmic synchronization.
+        active_loop_players = self.player.loop_players.values()
+        if active_loop_players:
+            # Ratios derived from user request (multiples of 2 and 3)
+            # for finding musically-related loop lengths.
+            ratios = [
+                1/4, 1/3, 1/2, 2/3, 3/4, 1.0, 4/3, 3/2, 2.0, 3.0, 4.0
+            ]
+
+            best_conformed_duration = duration
+            min_diff = float('inf')
+
+            # Find the best fit among all active loops and all candidate durations.
+            for player in active_loop_players:
+                active_duration = player.duration
+                if active_duration <= 0:
+                    continue
+
+                # 1. Check against explicit musical ratios
+                for ratio in ratios:
+                    candidate_duration = active_duration * ratio
+                    diff = abs(candidate_duration - duration)
+                    if diff < min_diff:
+                        min_diff = diff
+                        best_conformed_duration = candidate_duration
+
+                # 2. Check against nearest integer multiples/divisions.
+                # This helps snap to the beat for longer or shorter loops.
+                if duration > active_duration:
+                    multiple = round(duration / active_duration)
+                    if multiple > 1: # Don't re-check ratio of 1.0
+                        candidate_duration = active_duration * multiple
+                        diff = abs(candidate_duration - duration)
+                        if diff < min_diff:
+                            min_diff = diff
+                            best_conformed_duration = candidate_duration
+                else: # duration <= active_duration
+                    divisor = round(active_duration / duration)
+                    if divisor > 1:
+                        candidate_duration = active_duration / divisor
+                        diff = abs(candidate_duration - duration)
+                        if diff < min_diff:
+                            min_diff = diff
+                            best_conformed_duration = candidate_duration
+
+            # If a better duration was found, use it.
+            if abs(duration - best_conformed_duration) > 1e-9: # Compare floats carefully
+                print(f"Loop duration conformed. Original: {duration:.3f}s -> New: {best_conformed_duration:.3f}s")
+                duration = best_conformed_duration
+
+        # Save captured actions to an F-Key track
+        music_context = None
+        if self.music.active and self.music.sample:
+            music_context = {
+                'sample': self.music.sample,
+                'start_frame': self.music.sample_start_frame,
+                'end_frame': self.music.sample_end_frame,
+                'base_fps': self.music.base_fps,
+            }
+
+        current_volume = 1.0 # Default
+        if self.player.players:
+            active_player = self.player.players[-1]
+            actual_player = getattr(active_player, 'go', active_player)
+            if hasattr(actual_player, 'volume'):
+                current_volume = actual_player.volume
+
+        self.f_key_loops[slot_key] = {
+            'actions': self.f_key_current_actions,
+            'duration': duration,
+            'music_context': music_context,
+            'volume': current_volume,
+            'locked': False
+        }
+        if slot_key in self.player.loop_players:
+            self.player.toggle_loop(slot_key, None) # Disable if it was running
+        self.f_key_capturing = False
+        print(f"Loop saved to {pygame.key.name(slot_key)}. "
+              f"({len(self.f_key_current_actions)} actions, duration: {duration:.2f}s, vol: {current_volume:.2f})")
+        self.f_key_current_actions = []
+        self.status()
+        if advance_pointer:
+            self._find_next_unlocked_f_key_slot(advance=True)
+
+    def save_captured_loop_to_next_slot(self):
+        """Saves the currently captured loop to the next available F-key slot."""
+        slot_key = self.f_key_slot_order[self.next_f_key_slot_index]
+        self.save_captured_loop_to_slot(slot_key, advance_pointer=True)
 
     '''
     def peek(self, me=True, delay=None):
