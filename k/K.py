@@ -158,6 +158,15 @@ class OS:
         self.tracks_font = pygame.font.SysFont('monospace', 10, bold=True)
         self._draw_tracks_surfaces()
 
+        # Samples indicator
+        self.SAMPLES_COUNT = 10
+        self.SAMPLES_W = self.TRACK_W * self.SAMPLES_COUNT
+        self.SAMPLES_H = self.TRACKS_H
+        self.SAMPLES_X = (WIDTH // 2) + ((WIDTH // 2) - (self.TRACKS_X + self.TRACKS_W))
+        self.SAMPLES_Y = self.TRACKS_Y
+        self.samples_font = self.tracks_font
+        self._draw_samples_surfaces()
+
         self.bg = pygame.Surface((WIDTH, HEIGHT-STATUS))
         self.bg.fill(BLACK)
         pygame.draw.line(self.bg, WHITE,
@@ -274,6 +283,28 @@ class OS:
         self.tracks_surface_red = create_styled_surface(RED, BLACK)
         # Surface for showing about-to-loop tracks (blue background, white text)
         self.tracks_surface_blue = create_styled_surface(BLUE, WHITE)
+
+    def _draw_samples_surfaces(self):
+        # Helper to create a complete samples bar surface with a given style
+        def create_styled_surface(bg_color, text_color):
+            surface = pygame.Surface((self.SAMPLES_W, self.SAMPLES_H))
+            surface.fill(bg_color)
+            labels = [str(i) for i in range(1, 10)] + ['0']
+            for i in range(self.SAMPLES_COUNT):
+                text_surf = self.samples_font.render(labels[i], True, text_color)
+                text_rect = text_surf.get_rect(center=(i * self.TRACK_W + self.TRACK_W / 2, self.SAMPLES_H / 2))
+                surface.blit(text_surf, text_rect)
+                if i > 0:
+                    pygame.draw.line(surface, GRAY, (i * self.TRACK_W, 0), (i * self.TRACK_W, self.SAMPLES_H))
+            pygame.draw.rect(surface, GRAY, surface.get_rect(), 1)
+            return surface
+
+        # Normal surface (black background, white numbers)
+        self.samples_surface = create_styled_surface(BLACK, WHITE)
+        # Surface for showing set samples (red background, black numbers)
+        self.samples_surface_red = create_styled_surface(RED, BLACK)
+        # Surface for showing active sample (green background, black numbers)
+        self.samples_surface_green = create_styled_surface(GREEN, BLACK)
 
     def tick(self, gui=True):
         #print('.', end='')
@@ -724,6 +755,7 @@ class OS:
         self.sui.draw_ui(bar)
 
         if hasattr(self, 'player'):
+            # Draw F-Key Tracks indicator
             if self.f_key_capturing:
                 bar.blit(self.tracks_surface_capturing, (self.TRACKS_X, self.TRACKS_Y))
             else:
@@ -743,6 +775,28 @@ class OS:
                         bar.blit(self.tracks_surface_green, (track_x, track_y), area)
                 elif key in self.f_key_loops:
                     bar.blit(self.tracks_surface_red, (track_x, track_y), area)
+
+            # Draw Samples indicator
+            bar.blit(self.samples_surface, (self.SAMPLES_X, self.SAMPLES_Y))
+            if self.player.players:
+                player = self.player.players[-1]
+                actual_player = getattr(player, 'go', player)
+
+                if hasattr(actual_player, 'selection_regions'):
+                    selection_regions = actual_player.selection_regions
+                    active_slot_key = self.music.active_slot_key if self.music.active else None
+
+                    sample_keys = [pygame.K_1 + i for i in range(9)] + [pygame.K_0]
+
+                    for i, key in enumerate(sample_keys):
+                        area = pygame.Rect(i * self.TRACK_W, 0, self.TRACK_W, self.SAMPLES_H)
+                        sample_x = self.SAMPLES_X + i * self.TRACK_W
+                        sample_y = self.SAMPLES_Y
+
+                        if key == active_slot_key:
+                            bar.blit(self.samples_surface_green, (sample_x, sample_y), area)
+                        elif key in selection_regions:
+                            bar.blit(self.samples_surface_red, (sample_x, sample_y), area)
 
 
         lit = self.screen.blit(bar, (0, HEIGHT-STATUS))
@@ -990,4 +1044,3 @@ class OS:
 
         #pygame.quit()
         print('graceful death')
-

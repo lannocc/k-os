@@ -34,6 +34,7 @@ class Mode:
         self.active_notes = {}  # {pygame_key: {'channel': Channel, 'start_ticks': int, ...}}
         self.original_volume = None
         self.slotted_samples = {}
+        self.active_slot_key = None
 
         self.ffmpeg_checked = False
         self.ffmpeg_available = False
@@ -185,6 +186,7 @@ class Mode:
         """Disables music mode and clears the audio sample."""
         self.active = False
         self.sample = None
+        self.active_slot_key = None
         #self.slotted_samples.clear()
         for note_data in self.active_notes.values():
             if note_data['channel']:
@@ -204,6 +206,7 @@ class Mode:
         """Clears all cached audio samples."""
         self.slotted_samples.clear()
         self.sample = None
+        self.active_slot_key = None
         print("Music mode audio cache cleared.")
 
     def cache_sample_for_slot(self, slot_key, player_instance):
@@ -269,6 +272,7 @@ class Mode:
             self.sample_start_frame = data['start_frame']
             self.sample_end_frame = data['end_frame']
             self.base_fps = data['base_fps']
+            self.active_slot_key = slot_key
 
             # Stop any currently playing note before swapping
             for note_data in self.active_notes.values():
@@ -492,3 +496,4 @@ class Mode:
                 self.original_volume = None
             return True
         return False
+
