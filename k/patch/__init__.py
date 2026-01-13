@@ -47,12 +47,17 @@ def apply_patch(cur, fetchall, version):
     print(f'Hit <ENTER> to apply version {version}...')
     input()
 
-    exec(f'from .v{version} import patch as patch_v{version}')
+    # Using two separate `exec` calls can cause scoping issues. The function
+    # imported in the first exec is not always available to the second.
+    # This is corrected by using a dictionary to capture the imported function.
+    local_scope = {}
+    exec(f'from .v{version} import patch as patch_v{version}', globals(), local_scope)
 
     cur.execute('PRAGMA foreign_keys=OFF')
     cur.execute('BEGIN')
 
-    exec(f'patch_v{version}(cur)')
+    # Call the function retrieved from our controlled scope.
+    local_scope[f'patch_v{version}'](cur)
 
     cur.execute('PRAGMA foreign_key_check')
     fails = fetchall()
@@ -65,4 +70,3 @@ def apply_patch(cur, fetchall, version):
     cur.execute('COMMIT')
     cur.execute('PRAGMA foreign_keys=ON')
     cur.execute('VACUUM')
-

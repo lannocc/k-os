@@ -6,6 +6,9 @@ from .frag import HeadlessPlayer
 
 import io
 import traceback
+import json
+import os
+import k.storage as media
 try:
     from pydub import AudioSegment
     PYDUB_AVAILABLE = True
@@ -138,16 +141,41 @@ class LoopPlayer:
         self.music_relative_volume = 1.0
         self.internal_player = None
         self.music_player = None
-        if music_context:
-            self.music_player = MicroMusicPlayer(
-                music_context['sample'],
-                music_context['base_fps'],
+
+        loaded_sample = None
+        base_fps = None
+
+        if isinstance(music_context, str): # JSON from DB
+            if PYDUB_AVAILABLE:
+                try:
+                    context = json.loads(music_context)
+                    video_id, start_frame, end_frame, base_fps = context['source_video_id'], context['start_frame'], context['end_frame'], context['base_fps']
+                    audio_path = media.get_audio(video_id)
+                    if audio_path and os.path.exists(audio_path):
+                        full_audio = AudioSegment.from_file(audio_path)
+                        start_ms = start_frame * 1000 / base_fps
+                        end_ms = end_frame * 1000 / base_fps
+                        loaded_sample = full_audio[int(start_ms):int(end_ms)]
+                    else:
+                        print(f"ERROR: Could not find audio for video {video_id} at {audio_path}")
+                except Exception as e:
+                    print(f"ERROR loading music context from JSON for loop player: {e}")
+                    traceback.print_exc()
+        elif isinstance(music_context, dict): # Live object from in-session loop
+            loaded_sample = music_context['sample']
+            base_fps = music_context['base_fps']
+
+        if loaded_sample and base_fps is not None:
+             self.music_player = MicroMusicPlayer(
+                loaded_sample,
+                base_fps,
                 k.music.ffmpeg_available,
                 self.volume
             )
+
         self.action_index = 0
         self.start_time = 0
-        self.first_action_time = self.actions[0].t if self.actions else 0
+        #self.first_action_time = self.actions[0].t if self.actions else 0
         self.loop = True
         self.key_name = pygame.key.name(self.key).upper()
         self.will_loop = False
@@ -167,7 +195,7 @@ class LoopPlayer:
         self.music_relative_volume = 1.0
         self.speed = 1.0
         self.direction = 1
-        print(f"[LoopPlayer:{self.key_name}] Starting loop.")
+        #print(f"[LoopPlayer:{self.key_name}] Starting loop.")
 
     def set_volume(self, volume):
         self.volume = volume
@@ -193,7 +221,7 @@ class LoopPlayer:
         if self.internal_player and self.internal_player.playing is not None:
             tock = self.internal_player.tick()
             if tock is None: # Player finished or was killed
-                print(f"[LoopPlayer:{self.key_name}] Internal player finished.")
+                #print(f"[LoopPlayer:{self.key_name}] Internal player finished.")
                 self.internal_player.kill()
                 self.internal_player = None
 
@@ -222,7 +250,7 @@ class LoopPlayer:
             self.action_index = 0
             if self.music_player:
                 self.music_player.kill()
-            print(f"[LoopPlayer:{self.key_name}] Loop restarting.")
+            #print(f"[LoopPlayer:{self.key_name}] Loop restarting.")
             # We don't kill the internal_player here. The first PlayerPlay action
             # in the loop will handle re-seeking or recreating it efficiently.
 
@@ -232,8 +260,8 @@ class LoopPlayer:
         # This part needs to be a loop to catch up on missed/simultaneous actions
         while self.action_index < len(self.actions):
             action = self.actions[self.action_index]
-            # Action timestamps are relative to the first action in the recording (in seconds)
-            action_time = action.t - self.first_action_time
+            # Action timestamps are integer microseconds. Convert to float seconds for comparison.
+            action_time = action.t / PRECISION
 
             if elapsed >= action_time:
                 # Execute action
@@ -298,7 +326,7 @@ class LoopPlayer:
                 break
 
     def kill(self):
-        print(f"[LoopPlayer:{self.key_name}] Kill called.")
+        #print(f"[LoopPlayer:{self.key_name}] Kill called.")
         if self.internal_player:
             self.internal_player.kill()
         if self.music_player:

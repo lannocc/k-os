@@ -4,11 +4,12 @@ import k.storage as media
 from .core import Resource, Tracker
 from .ui import Player as UI, PRACK
 
+import json
 from html import escape
 
 
 class Player(UI):
-    def __init__(self, k, source, loop=None, jumps=None):
+    def __init__(self, k, source, loop=None, jumps=None, selection_regions_json=None, frag_id=None):
         video_id = source
         if isinstance(source, Tracker):
             trk = source
@@ -25,7 +26,7 @@ class Player(UI):
             self.channel['ytid'], self.video['ytid'])
         thumb = pygame.image.load(thumb)
 
-        super().__init__(k, trk, thumb, loop, jumps)
+        super().__init__(k, trk, thumb, loop, jumps, selection_regions_json=selection_regions_json, frag_id=frag_id)
 
         self.btn_general = pygame_gui.elements.UIButton(
             text='General',
@@ -68,11 +69,40 @@ class Player(UI):
         self.trk.res.kill()
 
     def save(self):
-        frag = self.k.frag(kdb.MEDIA_VIDEO, self.video_id, self.trk.begin,
-            self.trk.end)
-        media.copy_thumbnail(self.video_id, self.k.project(), frag)
-        self.k.clip(frag, self.loop, self.loop_begin, self.loop_end, self.jumps)
-        self.k.focus_clip(frag)
+        keys = pygame.key.get_pressed()
+        is_shift_pressed = keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]
+
+        regions = self.selection_regions if hasattr(self, 'selection_regions') else None
+
+        if self.frag_id and not is_shift_pressed:
+            # Update existing clip
+            print(f"Updating clip for fragment {self.frag_id}")
+            loop_str = f"{1 if self.loop else 0},{self.loop_begin},{self.loop_end}"
+            jumps_str = ','.join([str(j) for j in self.jumps])
+            regions_json = json.dumps(regions) if regions else None
+
+            kdb.set_clip_loop(self.frag_id, loop_str)
+            kdb.set_clip_jumps(self.frag_id, jumps_str)
+            kdb.set_clip_selection_regions(self.frag_id, regions_json)
+            kdb.touch_clip(self.frag_id)
+
+            # Refresh the clip list in the project view
+            studio = self.k.panel_project.panel_studio
+            studio.panel_clip.refresh_clips()
+
+        else:
+            # Save as new clip
+            project_id = self.k.project()  # Ensure project exists
+            frag = self.k.frag(kdb.MEDIA_VIDEO, self.video_id, self.trk.begin, self.trk.end)
+            media.copy_thumbnail(self.video_id, project_id, frag)
+            self.k.clip(frag, self.loop, self.loop_begin, self.loop_end, self.jumps, regions)
+
+            # After saving as new, this player now represents the new fragment.
+            self.frag_id = frag
+            if self.btn_save:
+                self.btn_save.set_text("Save")
+
+            self.k.focus_clip(frag)
 
     def clip(self):
         frag = self.k.frag(kdb.MEDIA_VIDEO, self.video_id, self.loop_begin,
@@ -423,4 +453,3 @@ class Labels(KPanel):
             button.set_text(f'[x] {label["name"]}')
 
         self.refresh_video_labels()
-

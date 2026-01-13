@@ -8,6 +8,7 @@ from .core import get_size_to_fit
 
 import random
 import time
+import json
 
 
 PRECT = pygame.Rect((WIDTH-PWIDTH, 0), (PWIDTH, HEIGHT))
@@ -19,9 +20,10 @@ MOD_MAN = 666
 
 
 class Player(KPanel):
-    def __init__(self, k, tracker, thumbnail=None, loop=None, jumps=None):
+    def __init__(self, k, tracker, thumbnail=None, loop=None, jumps=None, selection_regions_json=None, frag_id=None):
         super().__init__(k, relative_rect=PRECT, visible=1)
 
+        self.frag_id = frag_id
         self.trk = tracker
 
         self.progress = pygame_gui.elements.UIHorizontalSlider(
@@ -38,8 +40,9 @@ class Player(KPanel):
             relative_rect=pygame.Rect((10, 335), (80, -1)))
 
         if hasattr(self, 'save'):
+            button_text = "Save" if self.frag_id else "Save*"
             self.btn_save = pygame_gui.elements.UIButton(
-                text='Save*',
+                text=button_text,
                 manager=k.gui,
                 container=self.container,
                 relative_rect=pygame.Rect((110, 335), (80, -1)))
@@ -81,6 +84,13 @@ class Player(KPanel):
             self.loop_end = self.trk.frames - 1
 
         self.selection_regions = {}
+        if selection_regions_json:
+            try:
+                loaded_regions = json.loads(selection_regions_json)
+                self.selection_regions = {int(k): v for k, v in loaded_regions.items()}
+            except (json.JSONDecodeError, TypeError):
+                print("Warning: Could not load corrupt selection regions data.")
+                self.selection_regions = {}
         self.selection_key_map = {
             pygame.K_1: '1', pygame.K_2: '2', pygame.K_3: '3', pygame.K_4: '4', pygame.K_5: '5',
             pygame.K_6: '6', pygame.K_7: '7', pygame.K_8: '8', pygame.K_9: '9', pygame.K_0: '0',
@@ -91,7 +101,7 @@ class Player(KPanel):
             pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9, pygame.K_0
         ]
         self.next_selection_slot_index = 0
-        #self._find_next_unlocked_slot()
+        self._set_initial_selection_slot_index()
 
         if jumps:
             self.jumps = [int(j) for j in jumps.split(',')]
@@ -298,6 +308,17 @@ class Player(KPanel):
         self.lbl_frame.set_text(str(frame))
 
     def tick(self):
+        # Handle shift-key override for save button text
+        if self.btn_save and self.frag_id:
+            keys = pygame.key.get_pressed()
+            is_shift_pressed = keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]
+            if is_shift_pressed:
+                if self.btn_save.text != "Save*":
+                    self.btn_save.set_text("Save*")
+            else:
+                if self.btn_save.text != "Save":
+                    self.btn_save.set_text("Save")
+
         if self.volume_direction != 0:
             now = time.perf_counter()
             if self._last_vol_update_time == 0:
@@ -588,6 +609,10 @@ class Player(KPanel):
                         region[2] = new_volume
                         self.selection_regions[active_slot_key] = tuple(region)
 
+                        clip_id = self.get_or_create_frag_id()
+                        if clip_id is not None:
+                            kdb.set_clip_selection_regions(clip_id, json.dumps(self.selection_regions))
+
                         # Update the live music mode volume
                         if self.k.f_key_capturing:
                             self.k.f_key_current_actions.append(PlayerSetMusicVolume(new_volume))
@@ -614,6 +639,10 @@ class Player(KPanel):
                     self.selection_regions[key] = tuple(region)
                     state = "locked" if region[3] else "unlocked"
                     print(f"Sample slot {self.selection_key_map.get(key, key)} is now {state}.")
+
+                    clip_id = self.get_or_create_frag_id()
+                    if clip_id is not None:
+                        kdb.set_clip_selection_regions(clip_id, json.dumps(self.selection_regions))
 
                     if was_locked: # Just unlocked it
                         # If all other slots are locked, this becomes the new target
@@ -671,6 +700,10 @@ class Player(KPanel):
 
                 self.selection_regions[slot_key] = (self.loop_begin, self.loop_end, self.volume, False)
                 print(f"Selection saved to slot {self.selection_key_map.get(slot_key, slot_key)}")
+
+                clip_id = self.get_or_create_frag_id()
+                if clip_id is not None:
+                    kdb.set_clip_selection_regions(clip_id, json.dumps(self.selection_regions))
 
                 # If music mode is active, cache the audio for this new slot
                 if self.k.music.active:
@@ -968,6 +1001,25 @@ class Player(KPanel):
 
     def op_unhold(self):
         self.op_start()
+
+    def _set_initial_selection_slot_index(self):
+        """Sets the initial next_selection_slot_index based on existing regions."""
+        # a) First look for a completely unused slot.
+        for i, key in enumerate(self.selection_slot_order):
+            if key not in self.selection_regions:
+                self.next_selection_slot_index = i
+                return
+
+        # b) If all slots are used, look for the first unlocked slot.
+        for i, key in enumerate(self.selection_slot_order):
+            region_data = self.selection_regions.get(key)
+            is_locked = region_data and len(region_data) > 3 and region_data[3]
+            if not is_locked:
+                self.next_selection_slot_index = i
+                return
+        
+        # If all slots are used and locked, default to 0. The save handler will handle it.
+        self.next_selection_slot_index = 0
 
     def _find_previous_unlocked_slot(self):
         """Finds the previous available (unlocked) selection slot and updates self.next_selection_slot_index."""

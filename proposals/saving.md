@@ -1,6 +1,6 @@
 # Project Saving Expansion: Loops and Samples
 
-**Status:** Proposed
+**Status:** Implemented
 
 This document outlines a proposal to expand the project saving functionality to include the persistence of music performance data. Specifically, this covers the F-key audio loop tracks and the number-key saved samples, making them integral parts of a project that can be saved and restored across sessions.
 

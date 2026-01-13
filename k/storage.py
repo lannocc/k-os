@@ -1,6 +1,6 @@
 import k.db as kdb
 
-from os import mkdir, listdir
+from os import mkdir, listdir, remove
 from os.path import join, exists
 from urllib.request import urlretrieve
 import xml.etree.ElementTree as ET
@@ -36,13 +36,34 @@ def get_video_thumbnail(yt_channel_id, yt_video_id):
 def get_audio_filename(yt_channel_id, yt_video_id):
     return join(DOWNLOADS, yt_channel_id, f'{yt_video_id}.wav')
 
+def get_audio(video_id):
+    """Gets the audio file path for a given internal video ID."""
+    video = kdb.get_video(video_id)
+    if not video:
+        return None
+    channel = kdb.get_channel(video['channel'])
+    if not channel:
+        return None
+    return get_audio_filename(channel['ytid'], video['ytid'])
+
 def get_frag_thumbnail(project_id, frag_id):
     return join(PROJECTS, str(project_id), f'{frag_id}.jpg')
+
+def delete_frag_thumbnail(project_id, frag_id):
+    fn = get_frag_thumbnail(project_id, frag_id)
+    if exists(fn):
+        remove(fn)
 
 def start_project(project_id):
     folder = join(PROJECTS, str(project_id))
     print(f'creating project folder: {folder}')
     mkdir(folder)
+
+def delete_project_folder(project_id):
+    folder = join(PROJECTS, str(project_id))
+    if exists(folder):
+        print(f'deleting project folder: {folder}')
+        shutil.rmtree(folder)
 
 def copy_thumbnail(video_id, project_id, frag_id):
     video = kdb.get_video(video_id)

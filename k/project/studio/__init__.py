@@ -5,6 +5,8 @@ from .clip import Panel as Clip
 from .sequence import Panel as Seq
 #import k.project.studio.noise as pnoise
 #import k.project.studio.macro as pmacro
+from k.player.actions import *
+import json
 
 from datetime import datetime
 
@@ -157,6 +159,25 @@ class Panel(KPanel):
         if name:
             self.inp_name.set_text(name)
 
+        self.k.f_key_loops.clear()
+        db_tracks = kdb.list_f_tracks(project_id)
+        for track_data in db_tracks:
+            fkey = track_data['fkey']
+            action_lines = track_data['actions'].split('\n')
+            actions = [PlayerAction.get(line) for line in action_lines if line]
+            music_context_json = track_data['music_context_json']
+            
+            self.k.f_key_loops[fkey] = {
+                'actions': actions,
+                'duration': track_data['duration'],
+                'volume': track_data['volume'],
+                'locked': track_data['locked'],
+                'music_context': music_context_json,
+                'music_context_json': music_context_json
+            }
+
+        self.k._set_initial_f_key_slot_index()
+
         self.panel_clip.refresh_clips()
         self.panel_seq.refresh_seqs()
         self.k.panel_project.panel_library.refresh(self.project_id)
@@ -170,6 +191,8 @@ class Panel(KPanel):
         self.panel_seq.close_project()
 
         self.keys = {}
+        self.k.f_key_loops.clear()
+        self.k.next_f_key_slot_index = 0
         self.k.panel_project.panel_library.refresh()
 
     def panel_swap(self, btn, panel):

@@ -24,6 +24,30 @@ from datetime import datetime
 import traceback
 import time
 from html import escape
+import json
+
+
+# NEW CONSTANTS for player indicator colors and modifier keys
+BLUE_VIOLET = (138, 43, 226)
+RED_VIOLET = (199, 21, 133)
+MODIFIER_KEYS = {
+    pygame.K_LSHIFT, pygame.K_RSHIFT,
+    pygame.K_LCTRL, pygame.K_RCTRL,
+    pygame.K_LALT, pygame.K_RALT,
+    pygame.K_LGUI, pygame.K_RGUI,
+    pygame.K_MODE
+}
+VIOLET_ACTION_KEYS = {
+    # Arrow keys for seeking
+    pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT,
+    # Numpad keys for jumps
+    pygame.K_KP0, pygame.K_KP1, pygame.K_KP2, pygame.K_KP3, pygame.K_KP4,
+    pygame.K_KP5, pygame.K_KP6, pygame.K_KP7, pygame.K_KP8, pygame.K_KP9,
+    # Numpad keys for loop control
+    pygame.K_KP_PLUS, pygame.K_KP_MINUS,
+    # Hold key
+    pygame.K_KP_PERIOD
+}
 
 
 class OS:
@@ -465,6 +489,9 @@ class OS:
                             print(f"Track {pygame.key.name(event.key).upper()} is locked and cannot be deleted.")
                         else:
                             del self.f_key_loops[event.key]
+                            project_id = self.panel_project.panel_studio.project_id
+                            if project_id:
+                                kdb.delete_f_track(project_id, event.key)
                             if event.key in self.player.loop_players:
                                 self.player.loop_players[event.key].kill()
                                 del self.player.loop_players[event.key]
@@ -493,6 +520,18 @@ class OS:
                     loop_data['locked'] = not loop_data.get('locked', False)
                     state = "locked" if loop_data['locked'] else "unlocked"
                     print(f"Track {pygame.key.name(event.key).upper()} is now {state}.")
+                    project_id = self.panel_project.panel_studio.project_id
+                    if project_id:
+                        actions_str = "\n".join([a.format() for a in loop_data['actions']])
+                        kdb.upsert_f_track(
+                            project_id,
+                            event.key,
+                            actions_str,
+                            loop_data['duration'],
+                            loop_data['volume'],
+                            loop_data['locked'],
+                            loop_data.get('music_context_json')
+                        )
                     self._find_next_unlocked_f_key_slot()
                 else:
                     print(f"No loop saved to {pygame.key.name(event.key).upper()} to lock.")
@@ -586,7 +625,7 @@ class OS:
                         self.score()
 
                 else:
-                    if self.music.active and self.music.keydown(event.key):
+                    if self.music.active and self.music.keydown(event.key, event.mod):
                         # Music mode handled the key, do nothing more.
                         pass
                     else:
@@ -764,6 +803,9 @@ class OS:
 
     def status(self, mode=None):
         update = datetime.now()
+
+        if mode == 'N' and hasattr(self, 'music') and self.music.active:
+            mode = 'U'
 
         if mode != 'K' and self.panel_home.panel_keys.discover:
             self.panel_home.panel_keys.toggle_discover()
@@ -963,6 +1005,15 @@ class OS:
                     color = BLUE
                     text_color = WHITE
 
+                # Check for multiple key presses to change indicator color (overrides flash)
+                num_violet_keys = len(self.keys_down.intersection(VIOLET_ACTION_KEYS))
+                if num_violet_keys >= 3:
+                    color = RED_VIOLET
+                    text_color = WHITE
+                elif num_violet_keys == 2:
+                    color = BLUE_VIOLET
+                    text_color = WHITE
+
                 # Draw border
                 key_rect = pygame.Rect(self.PLAYER_INDICATOR_X, self.PLAYER_INDICATOR_Y, self.PLAYER_INDICATOR_W, self.PLAYER_INDICATOR_H)
                 pygame.draw.rect(bar, color, key_rect, 1)
@@ -1121,13 +1172,16 @@ class OS:
         project = self.project()
         return kdb.insert_frag(project, media, source, begin, end)
 
-    def clip(self, frag, loop, loop_begin, loop_end, jumps):
+    def clip(self, frag, loop, loop_begin, loop_end, jumps, selection_regions=None):
         loop = '1' if loop else '0'
         loop += f',{loop_begin}'
         loop += f',{loop_end}'
         jumps = ','.join([str(j) for j in jumps])
 
         kdb.insert_clip(frag, loop, jumps)
+        if selection_regions:
+            regions_json = json.dumps(selection_regions)
+            kdb.set_clip_selection_regions(frag, regions_json)
         self.panel_project.panel_studio.panel_clip.add_clip(frag)
 
     def clip_naked(self, frag):
@@ -1193,6 +1247,24 @@ class OS:
     def replay_break(self, synchronous=False):
         if self.replays:
             self.panel_replay.break_replay(synchronous=synchronous)
+
+    def _set_initial_f_key_slot_index(self):
+        """Sets the initial next_f_key_slot_index based on project data."""
+        # a) First look for a completely unused slot.
+        for i, key in enumerate(self.f_key_slot_order):
+            if key not in self.f_key_loops:
+                self.next_f_key_slot_index = i
+                return
+
+        # b) If all slots are used, look for the first unlocked slot.
+        for i, key in enumerate(self.f_key_slot_order):
+            loop_data = self.f_key_loops.get(key)
+            if loop_data and not loop_data.get('locked', False):
+                self.next_f_key_slot_index = i
+                return
+
+        # If all slots are used and locked, default to 0. The save function will handle the lock.
+        self.next_f_key_slot_index = 0
 
     def _find_previous_unlocked_f_key_slot(self):
         """
@@ -1306,8 +1378,15 @@ class OS:
                 print(f"Loop duration conformed. Original: {duration:.3f}s -> New: {best_conformed_duration:.3f}s")
                 duration = best_conformed_duration
 
+        # Normalize actions: make timestamps relative to the start and convert to integer microseconds.
+        # This makes the in-memory state consistent with what's loaded from the DB.
+        normalized_actions = self.f_key_current_actions
+        for action in normalized_actions:
+            action.t = int((action.t - first_action_time) * PRECISION)
+
         # Save captured actions to an F-Key track
         music_context = None
+        music_context_json = None
         if self.music.active and self.music.sample:
             music_context = {
                 'sample': self.music.sample,
@@ -1315,14 +1394,43 @@ class OS:
                 'end_frame': self.music.sample_end_frame,
                 'base_fps': self.music.base_fps,
             }
+            active_player = self.player.players[-1] if self.player.players else None
+            if active_player:
+                frag_id = getattr(active_player, 'clip_id', None) or getattr(active_player, 'frag_id', None)
+                if frag_id:
+                    frag_data = kdb.get_frag(frag_id)
+                    if frag_data and frag_data['media'] == kdb.MEDIA_VIDEO:
+                        source_video_id = frag_data['source']
+                        mc_data_for_json = {
+                            'source_video_id': source_video_id,
+                            'start_frame': self.music.sample_start_frame,
+                            'end_frame': self.music.sample_end_frame,
+                            'base_fps': self.music.base_fps,
+                        }
+                        music_context_json = json.dumps(mc_data_for_json)
 
         self.f_key_loops[slot_key] = {
-            'actions': self.f_key_current_actions,
+            'actions': normalized_actions,
             'duration': duration,
             'music_context': music_context,
+            'music_context_json': music_context_json,
             'volume': 0.5,  # Master volume defaults to 50%
             'locked': False
         }
+
+        project_id = self.panel_project.panel_studio.project_id
+        if project_id:
+            actions_str = "\n".join([a.format() for a in normalized_actions])
+            kdb.upsert_f_track(
+                project_id,
+                slot_key,
+                actions_str,
+                duration,
+                0.5, # volume
+                False, # locked
+                music_context_json
+            )
+
         if slot_key in self.player.loop_players:
             self.player.toggle_loop(slot_key, None) # Disable if it was running
         self.f_key_capturing = False

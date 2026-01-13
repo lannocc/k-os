@@ -7,7 +7,7 @@ from .video import Player as Video
 
 
 class Chaos(UI):
-    def __init__(self, k, frag_id, loop=None, jumps=None):
+    def __init__(self, k, frag_id, loop=None, jumps=None, selection_regions_json=None):
         # We intentionally do NOT call super().__init__()
 
         self.frag_id = frag_id
@@ -24,8 +24,7 @@ class Chaos(UI):
             if frag_type == kdb.MEDIA_VIDEO:
                 res = Resource(source, k.imagine)
                 trk = Tracker(res, begin=start, end=stop)
-                go = Video(k, trk, loop, jumps)
-                go.frag_id = self.frag_id
+                go = Video(k, trk, loop, jumps, selection_regions_json=selection_regions_json, frag_id=self.frag_id)
 
             else:
                 raise ValueError(
@@ -49,6 +48,11 @@ class Chaos(UI):
             return
 
         self.go.kill(replace)
+
+    def get_or_create_frag_id(self):
+        if not self.go:
+            return None
+        return self.go.get_or_create_frag_id()
 
     @property
     def panel_chaos(self):
@@ -262,7 +266,7 @@ class HeadlessPlayer:
         self.trk = None
         self.volume = volume
         print(f"    [HeadlessPlayer] Initializing for frag {self.frag_id}")
-        
+
         try:
             frag = kdb.get_frag(self.frag_id)
             frag_type = frag['media']
@@ -308,7 +312,7 @@ class HeadlessPlayer:
         print(f"    [HeadlessPlayer] Stop called for frag {self.frag_id}")
         self.trk.stop()
         self.playing = None
-    
+
     def seek(self, frame):
         if not self.trk:
             return
@@ -320,10 +324,10 @@ class HeadlessPlayer:
         """ This is the audio-only tick, delegating to the now audio-safe Tracker. """
         if self.playing is None or not self.trk:
             return None # Finished or failed
-        
+
         # Rely on the canonical Tracker.tick(), which is now safe for audio-only resources.
         tock = self.trk.tick()
-        
+
         # Sync our state with the tracker's state after the tick.
         self.playing = self.trk.playing
 

@@ -1,5 +1,6 @@
 from k.ui import *
 import k.db as kdb
+import k.storage as media
 
 
 class Panel(KPanel):
@@ -60,7 +61,6 @@ class Entry(KPanel):
             manager=k.gui,
             container=self.container,
             relative_rect=pygame.Rect((0, 30), (80, 25)))
-        self.btn_delete.disable() #FIXME
 
         self.lbl_name = pygame_gui.elements.UILabel(
             text=name,
@@ -85,18 +85,13 @@ class Entry(KPanel):
             self.btn_open.disable()
             self.k.job(self.open_project)
 
-        #elif element == self.btn_delete:
-        #    self.k.confirm = (
-        #        pygame_gui.windows.UIConfirmationDialog(
-        #            rect=pygame.Rect((350, 200), (250, 100)),
-        #            manager=self.k.gui,
-        #            window_title='Delete Project?',
-        #            action_short_name='Delete',
-        #            action_long_desc='Are you sure you want to delete the project?',
-        #            blocking=True
-        #        ),
-        #        self.delete_project
-        #    )
+        elif element == self.btn_delete:
+            self.k.confirm(
+                self.delete_project,
+                'Delete Project?',
+                'Delete',
+                f'Are you sure you want to delete the project "{self.lbl_name.text}"?'
+            )
 
     def open_project(self):
         panel = self.k.panel_project
@@ -107,8 +102,8 @@ class Entry(KPanel):
         panel = self.k.panel_project
         if panel.panel_studio.project_id == self.project_id:
             panel.panel_studio.close_project()
+        media.delete_project_folder(self.project_id)
         kdb.delete_project(self.project_id)
         panel.panel_library.refresh()
         panel.panel_library.hide()
         panel.panel_library.show()
-

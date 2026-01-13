@@ -90,6 +90,7 @@ class Mode:
     def engage(self):
         """Attempts to capture an audio sample to enable music mode."""
         print("Attempting to engage Music Mode...")
+        self.k.status('B')
         pygame.mixer.init()
 
         if not PYDUB_AVAILABLE:
@@ -235,33 +236,44 @@ class Mode:
             start_frame = trk.begin + loop_begin
             end_frame = trk.begin + loop_end
 
-            # Check if a valid cache for this exact selection already exists.
+            # Check if cache entry exists and handle updates efficiently.
             if slot_key in self.slotted_samples:
                 cached_data = self.slotted_samples[slot_key]
+                # If frames match, we might only need to update the volume.
                 if cached_data['start_frame'] == start_frame and cached_data['end_frame'] == end_frame:
-                    # The cache is for the same frames, so we assume it's valid.
-                    # The cache is cleared when the player is killed, so we don't need to check afn.
-                    print(f"Audio for slot {pygame.key.name(slot_key)} already cached. Skipping.")
-                    return # Already cached, do nothing.
+                    cached_volume = cached_data.get('volume', 1.0)
+                    if abs(cached_volume - volume) > 1e-9: # Volume has changed
+                        cached_data['volume'] = volume
+                        print(f"Volume for cached slot {pygame.key.name(slot_key)} updated to {volume:.2f}.")
+                    else:
+                        # Everything is the same, no need to do anything.
+                        print(f"Audio for slot {pygame.key.name(slot_key)} already cached. Skipping.")
+                    return # Return whether volume was updated or not.
 
-            start_ms = (start_frame / base_fps) * 1000
-            end_ms = (end_frame / base_fps) * 1000
-
+            # If we reach here, either the slot wasn't cached or the frames have changed.
+            # Proceed with full re-caching.
+            self.k.status('B')
             try:
-                audio = AudioSegment.from_file(afn)
-                sample = audio[start_ms:end_ms]
-                self.slotted_samples[slot_key] = {
-                    'sample': sample,
-                    'start_frame': start_frame,
-                    'end_frame': end_frame,
-                    'base_fps': base_fps,
-                    'volume': volume
-                }
-                print(f"Audio for slot {pygame.key.name(slot_key)} cached ({len(sample)}ms).")
-            except (FileNotFoundError, CouldntDecodeError) as e:
-                print(f"ERROR: Could not load or decode audio for slot {pygame.key.name(slot_key)}: {e}")
-            except Exception as e:
-                self.k.bug(e)
+                start_ms = (start_frame / base_fps) * 1000
+                end_ms = (end_frame / base_fps) * 1000
+
+                try:
+                    audio = AudioSegment.from_file(afn)
+                    sample = audio[start_ms:end_ms]
+                    self.slotted_samples[slot_key] = {
+                        'sample': sample,
+                        'start_frame': start_frame,
+                        'end_frame': end_frame,
+                        'base_fps': base_fps,
+                        'volume': volume
+                    }
+                    print(f"Audio for slot {pygame.key.name(slot_key)} cached ({len(sample)}ms).")
+                except (FileNotFoundError, CouldntDecodeError) as e:
+                    print(f"ERROR: Could not load or decode audio for slot {pygame.key.name(slot_key)}: {e}")
+                except Exception as e:
+                    self.k.bug(e)
+            finally:
+                self.k.status('U' if self.active else 'N')
 
     def load_slotted_sample(self, slot_key):
         """Loads a cached audio sample for music playback."""
@@ -392,6 +404,7 @@ class Mode:
         if not self.sample:
             return None
 
+        self.k.status('B')
         try:
 
             if semitones == 0:
@@ -436,9 +449,15 @@ class Mode:
         except Exception as e:
             self.k.bug(e)
             return None
+        finally:
+            self.k.status('U' if self.active else 'N')
 
-    def keydown(self, key):
+    def keydown(self, key, mod=0):
         """Handles a key press event when music mode is active."""
+        # Do not handle music keys if Ctrl or Alt is pressed, to allow for other shortcuts
+        if mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT):
+            return False
+
         if key not in self.music_keys:
             return False
 

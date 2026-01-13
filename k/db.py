@@ -6,7 +6,7 @@ from json import JSONEncoder
 from base64 import b64encode
 
 
-VERSION = 7
+VERSION = 8
 DATABASE = 'chaos.db'
 
 # meta table entries
@@ -891,22 +891,70 @@ def touch_project(project_id):
         project_id
     ))
 
-#def delete_project(project_id):
-#    cur.execute('''
-#        DELETE
-#        FROM clip
-#        WHERE project = ?
-#    ''', (
-#        project_id,
-#    ))
-#
-#    cur.execute('''
-#        DELETE
-#        FROM project
-#        WHERE id = ?
-#    ''', (
-#        project_id,
-#    ))
+def delete_project(project_id):
+    with Transaction():
+        # Get IDs of all sequences and fragments in the project
+        cur.execute('SELECT id FROM sequence WHERE project = ?', (project_id,))
+        seq_ids = [r['id'] for r in cur_fetchall()]
+        cur.execute('SELECT id FROM fragment WHERE project = ?', (project_id,))
+        frag_ids = [r['id'] for r in cur_fetchall()]
+
+        # Delete all segments that belong to the project's sequences
+        if seq_ids:
+            seq_placeholders = ','.join('?' for _ in seq_ids)
+            cur.execute(f'DELETE FROM segment WHERE sequence IN ({seq_placeholders})', seq_ids)
+
+        # Delete all clips that belong to the project's fragments
+        if frag_ids:
+            frag_placeholders = ','.join('?' for _ in frag_ids)
+            cur.execute(f'DELETE FROM clip WHERE fragment IN ({frag_placeholders})', frag_ids)
+
+        # Now delete the sequences and fragments themselves
+        cur.execute('DELETE FROM sequence WHERE project = ?', (project_id,))
+        cur.execute('DELETE FROM fragment WHERE project = ?', (project_id,))
+
+        # f_track will be deleted by ON DELETE CASCADE
+
+        # Finally, delete the project
+        cur.execute('DELETE FROM project WHERE id = ?', (project_id,))
+
+
+###
+### F_TRACK
+###
+
+cur.execute('''
+    CREATE TABLE IF NOT EXISTS f_track (
+        project             INTEGER NOT NULL,
+        fkey                INTEGER NOT NULL,
+        actions             TEXT NOT NULL,
+        duration            REAL NOT NULL,
+        volume              REAL NOT NULL DEFAULT 0.5,
+        locked              BOOLEAN NOT NULL DEFAULT 0,
+        music_context_json  TEXT,
+
+        PRIMARY KEY (project, fkey),
+        FOREIGN KEY (project) REFERENCES project (id) ON DELETE CASCADE
+    )
+''')
+
+def upsert_f_track(project_id, fkey, actions, duration, volume, locked, music_context_json):
+    cur.execute('''
+        INSERT OR REPLACE INTO f_track (
+            project, fkey, actions, duration, volume, locked, music_context_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (project_id, fkey, actions, duration, volume, locked, music_context_json))
+
+def delete_f_track(project_id, fkey):
+    cur.execute('''
+        DELETE FROM f_track WHERE project = ? AND fkey = ?
+    ''', (project_id, fkey))
+
+def list_f_tracks(project_id):
+    cur.execute('''
+        SELECT * FROM f_track WHERE project = ?
+    ''', (project_id,))
+    return cur_fetchall()
 
 
 ###
@@ -993,6 +1041,7 @@ cur.execute('''
         jumps       TEXT,
         created     TIMESTAMP,
         updated     TIMESTAMP,
+        selection_regions TEXT,
 
         FOREIGN KEY (fragment) REFERENCES fragment (id)
     )
@@ -1041,7 +1090,8 @@ CLIP_LIST_SQL = '''
         c.name AS 'name',
         c.key AS 'key',
         c.loop AS 'loop',
-        c.jumps AS 'jumps'
+        c.jumps AS 'jumps',
+        c.selection_regions AS 'selection_regions'
     FROM clip c
     LEFT JOIN fragment f ON f.id = c.fragment
 '''
@@ -1102,6 +1152,16 @@ def set_clip_jumps(frag_id, jumps):
         frag_id
     ))
 
+def set_clip_selection_regions(frag_id, regions_json):
+    cur.execute('''
+        UPDATE clip
+        SET selection_regions = ?
+        WHERE fragment = ?
+    ''', (
+        regions_json,
+        frag_id
+    ))
+
 def touch_clip(frag_id):
     cur.execute('''
         UPDATE clip
@@ -1112,14 +1172,14 @@ def touch_clip(frag_id):
         frag_id
     ))
 
-#def delete_clip(clip_id):
-#    cur.execute('''
-#        DELETE
-#        FROM clip
-#        WHERE fragment = ?
-#    ''', (
-#        clip_id,
-#    ))
+def delete_clip(frag_id):
+    with Transaction():
+        # A fragment might be used in a sequence segment. Delete those first.
+        cur.execute('DELETE FROM segment WHERE fragment = ?', (frag_id,))
+        # Delete the clip entry.
+        cur.execute('DELETE FROM clip WHERE fragment = ?', (frag_id,))
+        # Delete the fragment entry.
+        cur.execute('DELETE FROM fragment WHERE id = ?', (frag_id,))
 
 
 ###

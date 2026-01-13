@@ -68,23 +68,32 @@ class Panel(KPanel):
         #entry.play()
 
     def remove_clip(self, clip):
+        project_id = self.k.panel_project.panel_studio.project_id
+        if project_id:
+            media.delete_frag_thumbnail(project_id, clip.clip_id)
+
+        kdb.delete_clip(clip.clip_id)
+
         height = clip.get_rect().height
-        rect = None
-        found = False
+        try:
+            clip_index = self.clips.index(clip)
+        except ValueError:
+            return  # Clip not found, nothing to do
 
-        for entry in self.clips:
-            if entry == clip:
-                found = True
-                kdb.delete_clip(clip.clip_id)
-                clip.kill()
-            else:
-                rect = entry.get_rect()
-                if found:
-                    entry.set_position((rect[0], rect[1]-height))
+        # Kill UI element and remove from list
+        clip.kill()
+        self.clips.pop(clip_index)
 
-        if rect:
-            self.con_clips.set_scrollable_area_dimensions((480,
-                rect[1]+rect.height))
+        # Shift all subsequent clip UIs up
+        for i in range(clip_index, len(self.clips)):
+            self.clips[i].move_by(0, -height)
+
+        # Update the scrollable area's dimensions
+        if self.clips:
+            new_height = self.clips[-1].get_rect().bottom
+        else:
+            new_height = 0
+        self.con_clips.set_scrollable_area_dimensions((480, new_height))
 
     def click(self, element, target=None):
         for entry in self.clips:
@@ -100,6 +109,7 @@ class Entry(KPanel):
         self.key = clip['key']
         self.loop = clip['loop']
         self.jumps = clip['jumps']
+        self.selection_regions = clip.get('selection_regions')
 
         if self.key:
             self.k.panel_project.panel_studio.keys[self.key] = self
@@ -163,7 +173,6 @@ class Entry(KPanel):
             manager=k.gui,
             container=self.container,
             relative_rect=pygame.Rect((390, 25), (80, 25)))
-        self.btn_remove.disable() #FIXME
 
         #self.res = kpengine.Resource(clip['video'])
         #self.player = player.Video(self.k, self.clip_id, True)
@@ -178,7 +187,7 @@ class Entry(KPanel):
         super().kill()
 
     def enable(self):
-        #FIXME self.btn_remove.enable()
+        self.btn_remove.enable()
         self.inp_name.enable()
         self.btn_name.enable()
         self.inp_key.enable()
@@ -199,7 +208,7 @@ class Entry(KPanel):
         #player.hide()
         #player.show()
         #player.play()
-        player = Player(self.k, self.clip_id, self.loop, self.jumps)
+        player = Player(self.k, self.clip_id, self.loop, self.jumps, selection_regions_json=self.selection_regions)
         if not player.go:
             return None
         self.k.player.open(player, stacked=stack)
@@ -231,21 +240,15 @@ class Entry(KPanel):
                         del self.k.panel_project.panel_studio.keys[self.key]
                     self.k.panel_project.panel_studio.keys[key] = self
                     self.key = key
-        #elif element == self.btn_remove:
-        #    self.k.confirm = (
-        #        pygame_gui.windows.UIConfirmationDialog(
-        #            rect=pygame.Rect((350, 200), (300, 100)),
-        #            manager=self.k.gui,
-        #            window_title='Remove Clip from Project?',
-        #            action_short_name='Remove',
-        #            action_long_desc='Are you sure you want to remove this clip?',
-        #            blocking=True
-        #        ),
-        #        self.remove_clip
-        #    )
+        elif element == self.btn_remove:
+            self.k.confirm(
+                self.remove_clip,
+                'Remove Clip from Project?',
+                'Remove',
+                'Are you sure you want to remove this clip?'
+            )
 
     def keydown(self, key, mod):
         if key == self.key:
             stack = mod & pygame.KMOD_SHIFT
             self.play(stack)
-
