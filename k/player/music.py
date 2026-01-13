@@ -1,8 +1,9 @@
 from k.ui import *
-import io
-# from just_playback import Playback  <- No longer used for individual note playback
+from k.player.actions import *
 
 import pygame
+
+import io
 import os
 import sys
 import traceback
@@ -69,7 +70,12 @@ class Mode:
             pygame.K_j: -2,  # A#
             pygame.K_m: -1,  # B
         }
-        self.qwerty_keys = set(self.key_to_semitone.keys())
+        # Add number keys to map to semitone 0 (base note)
+        self.number_keys = {pygame.K_0 + i for i in range(10)}
+        for key in self.number_keys:
+            self.key_to_semitone[key] = 0
+
+        self.music_keys = set(self.key_to_semitone.keys())
 
     def toggle(self):
         """Engages or disengages music mode."""
@@ -259,6 +265,7 @@ class Mode:
 
     def load_slotted_sample(self, slot_key):
         """Loads a cached audio sample for music playback."""
+        if not self.k.player.players: return
         player = self.k.player.players[-1]
         actual_player = getattr(player, 'go', player)
 
@@ -281,6 +288,9 @@ class Mode:
             self.volume = data.get('volume', 1.0)
             self.active_slot_key = slot_key
 
+            if self.k.f_key_capturing:
+                self.k.f_key_current_actions.append(PlayerSetMusicVolume(self.volume))
+
             # Stop any currently playing note before swapping
             for note_data in self.active_notes.values():
                 if note_data['channel']:
@@ -298,6 +308,12 @@ class Mode:
         # Looping is handled by `sound.play(loops=-1)`, so the manual
         # re-triggering logic from just_playback is no longer needed.
         pass
+
+    def update_active_note_volume(self):
+        """Updates the volume of any currently playing note channel."""
+        for note_data in self.active_notes.values():
+            if note_data['channel']:
+                note_data['channel'].set_volume(self.volume)
 
     def _get_current_pos_ms(self):
         """Calculates the current playback position in milliseconds."""
@@ -423,12 +439,24 @@ class Mode:
 
     def keydown(self, key):
         """Handles a key press event when music mode is active."""
-        if key not in self.qwerty_keys or not self.sample or key in self.active_notes:
+        if key not in self.music_keys:
+            return False
+
+        # If a number key is pressed, it must first load its sample.
+        if key in self.number_keys:
+            player = self.k.player.players[-1] if self.k.player.players else None
+            actual_player = getattr(player, 'go', player) if player else None
+            if not (actual_player and hasattr(actual_player, 'selection_regions') and key in actual_player.selection_regions):
+                print(f"No sample saved to slot {pygame.key.name(key)}.")
+                return True  # Event handled, do nothing
+
+            self.load_slotted_sample(key)
+
+        if not self.sample or key in self.active_notes:
             return False
 
         if self.k.f_key_capturing:
-            from k.player.actions import PlayerNoteOn
-            self.k.f_key_current_actions.append(PlayerNoteOn(key))
+            self.k.f_key_current_actions.append(PlayerNoteOn(key, self.volume))
 
         current_pos_ms = 0
         is_pitch_change = bool(self.active_notes)
@@ -438,16 +466,17 @@ class Mode:
             player = self.k.player.players[-1]
             actual_player = getattr(player, 'go', player)
 
-            self.original_volume = actual_player.trk.res.audio.volume
-            actual_player.trk.res.audio.set_volume(0.0)
+            if hasattr(actual_player, 'trk') and hasattr(actual_player.trk, 'res'):
+                self.original_volume = actual_player.trk.res.audio.volume
+                actual_player.trk.res.audio.set_volume(0.0)
 
-            # Set temporary loop override on the player
-            loop_start_relative = self.sample_start_frame - actual_player.trk.begin
-            loop_end_relative = self.sample_end_frame - actual_player.trk.begin
-            actual_player.music_mode_override = True
-            actual_player.music_mode_loop_begin = loop_start_relative
-            actual_player.music_mode_loop_end = loop_end_relative
-            actual_player.seek(loop_start_relative)
+                # Set temporary loop override on the player
+                loop_start_relative = self.sample_start_frame - actual_player.trk.begin
+                loop_end_relative = self.sample_end_frame - actual_player.trk.begin
+                actual_player.music_mode_override = True
+                actual_player.music_mode_loop_begin = loop_start_relative
+                actual_player.music_mode_loop_end = loop_end_relative
+                actual_player.seek(loop_start_relative)
 
         # If a note is already playing (pitch change), get its current position.
         if is_pitch_change:
@@ -485,7 +514,6 @@ class Mode:
         """Handles a key release event when music mode is active."""
         if key in self.active_notes:
             if self.k.f_key_capturing:
-                from k.player.actions import PlayerNoteOff
                 self.k.f_key_current_actions.append(PlayerNoteOff(key))
 
             note_data = self.active_notes.pop(key)
@@ -499,8 +527,9 @@ class Mode:
                 if self.k.player.players:
                     player = self.k.player.players[-1]
                     actual_player = getattr(player, 'go', player)
-                    actual_player.trk.res.audio.set_volume(self.original_volume)
-                    actual_player.music_mode_override = False
+                    if hasattr(actual_player, 'trk') and hasattr(actual_player.trk, 'res'):
+                        actual_player.trk.res.audio.set_volume(self.original_volume)
+                        actual_player.music_mode_override = False
                 self.original_volume = None
             return True
         return False

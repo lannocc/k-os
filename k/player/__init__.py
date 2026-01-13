@@ -220,7 +220,7 @@ class Stack():
 
         self.players[-1].mouse_up(event)
 
-    def keydown(self, key, mod):
+    def keydown(self, key, mod, keys_down=None):
         if key == pygame.K_SCROLLOCK:
             self.toggle_size()
 
@@ -231,7 +231,7 @@ class Stack():
             self.kill()
 
         else:
-            self.players[-1].keydown(key, mod)
+            self.players[-1].keydown(key, mod, keys_down)
 
     def keyup(self, key, mod):
         if not self.players:

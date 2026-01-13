@@ -15,7 +15,7 @@ import k.replay as replay
 from k.replay.ops import *
 import k.ack as ack
 import k.player as player
-from k.player.actions import PlayerPlay, PlayerPause, PlayerSeek, PlayerNoteOn, PlayerNoteOff
+from k.player.actions import *
 from k.player.ops import Commands
 import k.player.music as music
 
@@ -93,6 +93,7 @@ class OS:
         self.backspace_action_taken = False
 
         self.player_indicator_flash_time = 0
+        self.keys_down = set()
 
         self.init_stop = datetime.now()
 
@@ -422,6 +423,7 @@ class OS:
             pass
 
         elif event.type == pygame.KEYDOWN:
+            self.keys_down.add(event.key)
             self.replay_op(KeyDown(event.scancode))
 
             alt = event.mod & pygame.KMOD_ALT
@@ -542,11 +544,14 @@ class OS:
 
                     # Capture initial speed/direction
                     if actual_player:
-                        from k.player.actions import PlayerSetSpeed
                         speed = getattr(actual_player, 'playback_speed', 1.0)
                         direction = getattr(actual_player, 'playback_direction', 1)
                         self.f_key_current_actions.append(PlayerSetSpeed(speed, direction, t=initial_action.t))
-                    
+
+                        # Also capture initial volume
+                        volume = getattr(actual_player, 'volume', 1.0)
+                        self.f_key_current_actions.append(PlayerSetVolume(volume, t=initial_action.t))
+
                     # Also capture any currently held music notes
                     if self.music.active and self.music.active_notes:
                         for key in self.music.active_notes.keys():
@@ -586,7 +591,7 @@ class OS:
                         pass
                     else:
                         # Default event handling
-                        self.player.keydown(event.key, event.mod)
+                        self.player.keydown(event.key, event.mod, self.keys_down)
 
                         if not self.ack and not self.player.big:
                             self.cur_panel.keydown(event.key, event.mod)
@@ -598,6 +603,7 @@ class OS:
                                 self.control = True
 
         elif event.type == pygame.KEYUP:
+            self.keys_down.discard(event.key)
             self.replay_op(KeyUp(event.scancode))
 
             if self.panel_home.panel_keys.discover:
@@ -905,7 +911,7 @@ class OS:
                                 color = BLUE
                             else:
                                 color = GREEN
-                            volume = self.music.volume
+                            volume = region_data[2] if region_data and len(region_data) > 2 else 1.0
                         elif region_data:
                             color = RED
                             volume = region_data[2] if len(region_data) > 2 else 1.0
@@ -1310,25 +1316,18 @@ class OS:
                 'base_fps': self.music.base_fps,
             }
 
-        current_volume = 1.0 # Default
-        if self.player.players:
-            active_player = self.player.players[-1]
-            actual_player = getattr(active_player, 'go', active_player)
-            if hasattr(actual_player, 'volume'):
-                current_volume = actual_player.volume
-
         self.f_key_loops[slot_key] = {
             'actions': self.f_key_current_actions,
             'duration': duration,
             'music_context': music_context,
-            'volume': current_volume,
+            'volume': 0.5,  # Master volume defaults to 50%
             'locked': False
         }
         if slot_key in self.player.loop_players:
             self.player.toggle_loop(slot_key, None) # Disable if it was running
         self.f_key_capturing = False
         print(f"Loop saved to {pygame.key.name(slot_key)}. "
-              f"({len(self.f_key_current_actions)} actions, duration: {duration:.2f}s, vol: {current_volume:.2f})")
+              f"({len(self.f_key_current_actions)} actions, duration: {duration:.2f}s")
         self.f_key_current_actions = []
         self.status()
         if advance_pointer:

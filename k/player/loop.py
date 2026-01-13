@@ -1,7 +1,7 @@
 from k.ui import *
 import time
 from k.replay.ops import Action, PRECISION
-from k.player.actions import PlayerPlay, PlayerPause, PlayerStop, PlayerSeek, PlayerNoteOn, PlayerNoteOff, PlayerSetSpeed
+from k.player.actions import *
 from .frag import HeadlessPlayer
 
 import io
@@ -51,6 +51,11 @@ class MicroMusicPlayer:
             if note_data['channel']:
                 note_data['channel'].stop()
         self.active_notes.clear()
+
+    def update_active_note_volume(self):
+        for note_data in self.active_notes.values():
+            if note_data['channel']:
+                note_data['channel'].set_volume(self.volume)
 
     def _get_current_pos_ms(self):
         if not self.active_notes: return 0
@@ -129,6 +134,8 @@ class LoopPlayer:
         self.duration = duration
         self.volume = volume
         self.internal_player_muted = False
+        self.relative_volume = 1.0
+        self.music_relative_volume = 1.0
         self.internal_player = None
         self.music_player = None
         if music_context:
@@ -156,9 +163,30 @@ class LoopPlayer:
         if self.music_player:
             self.music_player.kill()
         self.internal_player_muted = False
+        self.relative_volume = 1.0
+        self.music_relative_volume = 1.0
         self.speed = 1.0
         self.direction = 1
         print(f"[LoopPlayer:{self.key_name}] Starting loop.")
+
+    def set_volume(self, volume):
+        self.volume = volume
+        self.apply_internal_player_volume()
+        self.apply_music_player_volume()
+
+    def apply_internal_player_volume(self):
+        if self.internal_player and self.internal_player.trk:
+            combined_volume = self.volume * self.relative_volume
+            if not self.internal_player_muted:
+                self.internal_player.trk.res.audio.set_volume(combined_volume)
+            else:
+                self.internal_player.trk.res.audio.set_volume(0.0)
+
+    def apply_music_player_volume(self, note_volume=None):
+        if self.music_player:
+            base_vol = note_volume if note_volume is not None else self.music_relative_volume
+            self.music_player.volume = self.volume * base_vol
+            self.music_player.update_active_note_volume()
 
     def tick(self):
         # Tick the audio of the currently playing internal player, if any
@@ -210,12 +238,18 @@ class LoopPlayer:
             if elapsed >= action_time:
                 # Execute action
                 #print(f"[LoopPlayer:{self.key_name}] T+{elapsed:.3f}s :: Executing {type(action).__name__} (scheduled at {action_time:.3f}s)")
-                if isinstance(action, PlayerPlay):
+                if isinstance(action, PlayerSetVolume):
+                    self.relative_volume = action.volume
+                    self.apply_internal_player_volume()
+                elif isinstance(action, PlayerSetMusicVolume):
+                    self.music_relative_volume = action.volume
+                    self.apply_music_player_volume()
+                elif isinstance(action, PlayerPlay):
                     # Re-create player only if necessary
                     if not (self.internal_player and self.internal_player.trk and self.internal_player.frag_id == action.frag_id):
                         if self.internal_player:
                             self.internal_player.kill()
-                        self.internal_player = HeadlessPlayer(self.k, action.frag_id, self.volume)
+                        self.internal_player = HeadlessPlayer(self.k, action.frag_id, 1.0)
 
                     if self.internal_player and self.internal_player.trk: # Check for successful initialization
                         self.internal_player.trk.set_speed(self.speed)
@@ -223,22 +257,22 @@ class LoopPlayer:
                         start_frame = action.start_frame if action.start_frame is not None else self.internal_player.trk.begin
                         self.internal_player.seek(start_frame)
                         self.internal_player.play()
-                        # Apply mute state after any player action
-                        self.internal_player.trk.res.audio.set_volume(0.0 if self.internal_player_muted else self.volume)
+                        self.apply_internal_player_volume()
                     else:
                         self.internal_player = None  # Failed to load
                 elif isinstance(action, PlayerNoteOn) and self.music_player:
                     if not self.music_player.active_notes:  # First note is starting
                         self.internal_player_muted = True
-                        if self.internal_player and self.internal_player.trk:
-                            self.internal_player.trk.res.audio.set_volume(0.0)
+                        self.apply_internal_player_volume()
+                    
+                    note_volume = getattr(action, 'volume', self.music_relative_volume)
+                    self.apply_music_player_volume(note_volume=note_volume)
                     self.music_player.keydown(action.key)
                 elif isinstance(action, PlayerNoteOff) and self.music_player:
                     self.music_player.keyup(action.key)
                     if not self.music_player.active_notes:  # Last note was released
                         self.internal_player_muted = False
-                        if self.internal_player and self.internal_player.trk:
-                            self.internal_player.trk.res.audio.set_volume(self.volume)
+                        self.apply_internal_player_volume()
                 elif isinstance(action, PlayerSetSpeed):
                     self.speed = action.speed
                     self.direction = action.direction

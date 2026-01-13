@@ -1,4 +1,4 @@
-VVHEN="1.08 astrum 00+33 /6"
+VVHEN="1.12 badfriends 17+54 /6"
 THEY="yahoo.com"
 SAW="LANNOCC"
 ME="shawn"

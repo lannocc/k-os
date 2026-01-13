@@ -3,6 +3,7 @@ import k.db as kdb
 import k.storage as media
 from k.home import IMAGE
 from k.replay.ops import Action
+from k.player.actions import *
 from .core import get_size_to_fit
 
 import random
@@ -224,7 +225,6 @@ class Player(KPanel):
             return
 
         if self.k.f_key_capturing:
-            from k.player.actions import PlayerPlay
             # The action is recorded based on the new state
             frag_id = self.get_or_create_frag_id()
             if frag_id is not None:
@@ -250,7 +250,6 @@ class Player(KPanel):
             return
 
         if self.k.f_key_capturing:
-            from k.player.actions import PlayerPause
             self.k.f_key_current_actions.append(PlayerPause())
 
         self.op_stop()
@@ -264,7 +263,6 @@ class Player(KPanel):
             return
 
         if self.k.f_key_capturing:
-            from k.player.actions import PlayerStop
             self.k.f_key_current_actions.append(PlayerStop())
 
         self.reset()
@@ -277,7 +275,6 @@ class Player(KPanel):
         self.k.flash_player_indicator()
 
         if self.k.f_key_capturing:
-            from k.player.actions import PlayerSeek
             # Record absolute frame number for the tracker
             self.k.f_key_current_actions.append(PlayerSeek(frame + self.trk.begin))
 
@@ -313,8 +310,11 @@ class Player(KPanel):
             new_volume = max(0.0, min(1.0, self.volume + change))
             if new_volume != self.volume:
                 self.volume = new_volume
+                if self.k.f_key_capturing:
+                    self.k.f_key_current_actions.append(PlayerSetVolume(self.volume))
                 if hasattr(self.trk, 'res') and hasattr(self.trk.res, 'audio'):
-                    self.trk.res.audio.set_volume(self.volume)
+                    if not self.k.music.active or not self.k.music.active_notes:
+                        self.trk.res.audio.set_volume(self.volume)
         else:
             self._last_vol_update_time = 0
 
@@ -446,7 +446,6 @@ class Player(KPanel):
         if element is self.btn_pp:
             self.pause() if self.playing else self.play()
             if self.k.f_key_capturing:
-                from k.player.actions import PlayerPlay, PlayerPause
                 # The action is recorded based on the new state
                 if self.playing:
                     frag_id = getattr(self, 'frag_id', None)
@@ -519,7 +518,6 @@ class Player(KPanel):
             return
 
         if self.k.f_key_capturing:
-            from k.player.actions import PlayerSetSpeed
             self.k.f_key_current_actions.append(PlayerSetSpeed(speed, direction))
 
         self.playback_speed = speed
@@ -533,7 +531,7 @@ class Player(KPanel):
     def toggle_playback_direction(self):
         self.set_playback_speed(self.playback_speed, -self.playback_direction)
 
-    def keydown(self, key, mod):
+    def keydown(self, key, mod, keys_down=None):
         #print(f'{self.holding} DOWN {key}')
         pygame.key.set_repeat(0)
 
@@ -550,6 +548,59 @@ class Player(KPanel):
             ctrl = mod & pygame.KMOD_CTRL
             shift = mod & pygame.KMOD_SHIFT or mod & pygame.KMOD_LSHIFT \
                 or mod & pygame.KMOD_RSHIFT
+
+        # Adjust individual track/sample volume
+        if (key == pygame.K_PAGEUP or key == pygame.K_PAGEDOWN) and keys_down is not None:
+            volume_change = 0.1 if key == pygame.K_PAGEUP else -0.1
+            key_handled = False
+
+            # Check for held F-key
+            f_keys = [pygame.K_F1 + i for i in range(12)]
+            held_f_key = next((k for k in keys_down if k in f_keys and k != key), None)
+
+            if held_f_key and held_f_key in self.k.f_key_loops:
+                loop_data = self.k.f_key_loops[held_f_key]
+                current_volume = float(loop_data.get('volume', 1.0))
+                new_volume = round(max(0.0, min(1.0, current_volume + volume_change)), 2)
+                loop_data['volume'] = new_volume
+
+                if held_f_key in self.k.player.loop_players:
+                    self.k.player.loop_players[held_f_key].set_volume(new_volume)
+
+                print(f"Track {pygame.key.name(held_f_key).upper()} volume set to {new_volume:.2f}")
+                self.k.status()
+                key_handled = True
+
+            # If not an F-key, check if we're in music mode and should adjust the active sample's volume
+            if not key_handled and self.k.music.active:
+                active_slot_key = self.k.music.active_slot_key
+                if active_slot_key and active_slot_key in self.selection_regions:
+                    # A note or sample key must be held to prevent adjusting volume just by holding pageup/down
+                    is_music_related_key_held = any(k in self.k.music.music_keys for k in keys_down if k != key)
+
+                    if is_music_related_key_held:
+                        region_data = self.selection_regions[active_slot_key]
+                        region = list(region_data)
+                        while len(region) < 3: region.append(1.0)  # Default volume
+
+                        current_volume = float(region[2])
+                        new_volume = round(max(0.0, min(1.0, current_volume + volume_change)), 2)
+                        region[2] = new_volume
+                        self.selection_regions[active_slot_key] = tuple(region)
+
+                        # Update the live music mode volume
+                        if self.k.f_key_capturing:
+                            self.k.f_key_current_actions.append(PlayerSetMusicVolume(new_volume))
+                        self.k.music.volume = new_volume
+                        self.k.music.update_active_note_volume()
+
+                        slot_name = self.selection_key_map.get(active_slot_key, 'current')
+                        print(f"Sample slot {slot_name} volume set to {new_volume:.2f}")
+                        self.k.status()
+                        key_handled = True
+
+            if key_handled:
+                return  # Event fully handled, prevents main volume change
 
         if ctrl and not shift and not alt:
             if key in self.selection_slot_order:
@@ -630,14 +681,8 @@ class Player(KPanel):
                 return True  # event handled
 
             elif key in self.selection_slot_order:
-                # If music mode is active, load the sample instead of swapping regions.
-                if self.k.music.active:
-                    if key in self.selection_regions:
-                        self.k.music.load_slotted_sample(key)
-                    else:
-                        print(f"No selection in slot {self.selection_key_map.get(key, key)}")
-
-                # Hold-to-loop on saved selection region, regardless of music mode.
+                # In non-music mode, number keys activate hold-to-loop on a saved region.
+                # In music mode, this event is handled by k.player.music and this code is not reached.
                 if not man and key not in self.holding:
                     if key in self.selection_regions:
                         self.hold_loop_override = True
@@ -650,9 +695,7 @@ class Player(KPanel):
                         self.seek(self.hold_loop_begin)
                         self.keyhold(key)  # Use existing hold mechanism to track key release
                     else:
-                        # Only print if not in music mode, as it's already handled above if active.
-                        if not self.k.music.active:
-                            print(f"No selection in slot {self.selection_key_map.get(key, key)}")
+                        print(f"No selection in slot {self.selection_key_map.get(key, key)}")
                 return  # event handled
             elif key == pygame.K_BACKQUOTE:
                 # Load from default slot, swapping with current.

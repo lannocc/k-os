@@ -161,11 +161,11 @@ class Chaos(UI):
 
         self.go.mouse_up(event)
 
-    def keydown(self, key, mod):
+    def keydown(self, key, mod, keys_down=None):
         if not self.go:
             return
 
-        self.go.keydown(key, mod)
+        self.go.keydown(key, mod, keys_down)
 
     def keyup(self, key, mod):
         if not self.go:

@@ -68,18 +68,22 @@ class PlayerSeek(PlayerAction):
 
 
 class PlayerNoteOn(PlayerAction):
-    def __init__(self, key, t=None):
+    def __init__(self, key, volume=1.0, t=None):
         super().__init__(t)
         self.key = key
+        self.volume = volume
 
     @classmethod
     def parse(cls, t, data_str):
         if data_str is None:
             raise ParseError("PlayerNoteOn action requires a key", f"{t}:")
-        return cls(int(data_str), t)
+        parts = data_str.split(',')
+        key = int(parts[0])
+        volume = float(parts[1]) if len(parts) > 1 else 1.0
+        return cls(key, volume, t)
 
     def format(self, started=None):
-        return super().format(started) + str(self.key)
+        return super().format(started) + f"{self.key},{self.volume}"
 
 
 class PlayerNoteOff(PlayerAction):
@@ -115,6 +119,35 @@ class PlayerSetSpeed(PlayerAction):
     def format(self, started=None):
         return super().format(started) + f"{self.speed},{self.direction}"
 
+class PlayerSetVolume(PlayerAction):
+    def __init__(self, volume, t=None):
+        super().__init__(t)
+        self.volume = volume
+
+    @classmethod
+    def parse(cls, t, data_str):
+        if data_str is None:
+            raise ParseError("PlayerSetVolume action requires a volume level", f"{t}:")
+        return cls(float(data_str), t)
+
+    def format(self, started=None):
+        return super().format(started) + str(self.volume)
+
+
+class PlayerSetMusicVolume(PlayerAction):
+    def __init__(self, volume, t=None):
+        super().__init__(t)
+        self.volume = volume
+
+    @classmethod
+    def parse(cls, t, data_str):
+        if data_str is None:
+            raise ParseError("PlayerSetMusicVolume action requires a volume level", f"{t}:")
+        return cls(float(data_str), t)
+
+    def format(self, started=None):
+        return super().format(started) + str(self.volume)
+
 
 # IMPORTANT:
 # We are extending the main ACTIONS list from replay.ops here.
@@ -130,4 +163,6 @@ ACTIONS.extend([
     PlayerNoteOn,
     PlayerNoteOff,
     PlayerSetSpeed,
+    PlayerSetVolume,
+    PlayerSetMusicVolume,
 ])
