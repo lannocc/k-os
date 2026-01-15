@@ -28,8 +28,8 @@ class Store:
 
 
 class StoreEncoder(JSONEncoder):
-    def __init__(self, sort_keys=False):
-        super().__init__(sort_keys=sort_keys)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def default(self, obj):
         if isinstance(obj, Store):
@@ -1633,3 +1633,4 @@ def delete_label_video(label_id, video_id):
 
 
 print('db ready :-)')
+

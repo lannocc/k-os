@@ -1,5 +1,6 @@
 from k.ui import *
 from k.player.actions import *
+import k.storage as media
 
 import pygame
 
@@ -184,9 +185,7 @@ class Mode:
         if success:
             # Pre-cache existing slots after successful engagement
             print("Pre-caching audio for existing selection slots...")
-            if hasattr(actual_player, 'selection_regions'):
-                for slot_key in actual_player.selection_regions.keys():
-                    self.cache_sample_for_slot(slot_key, actual_player)
+            self.cache_all_slots_for_player(actual_player)
 
         if not success:
             self.sample = None
@@ -218,9 +217,26 @@ class Mode:
         self.active_slot_key = None
         print("Music mode audio cache cleared.")
 
+    def cache_all_slots_for_player(self, player_instance):
+        """Caches audio for all defined selection regions in a player."""
+        if hasattr(player_instance, 'selection_regions') and player_instance.selection_regions:
+            print(f"Caching audio for {len(player_instance.selection_regions)} slot(s)...")
+            for slot_key in player_instance.selection_regions.keys():
+                self.cache_sample_for_slot(slot_key, player_instance)
+
     def cache_sample_for_slot(self, slot_key, player_instance):
-        """Caches an audio segment for a given selection slot key."""
+        """Caches an audio segment for a given selection slot key to disk."""
         if not (hasattr(player_instance, 'selection_regions') and slot_key in player_instance.selection_regions):
+            return
+
+        project_id = self.k.panel_project.panel_studio.project_id
+        if not project_id:
+            print("Cannot cache sample: no active project.")
+            return
+
+        frag_id = getattr(player_instance, 'frag_id', None)
+        if not frag_id:
+            print("Cannot cache sample: player has no fragment ID.")
             return
 
         if hasattr(player_instance, 'trk') and player_instance.trk and hasattr(player_instance.trk, 'res'):
@@ -236,42 +252,40 @@ class Mode:
             start_frame = trk.begin + loop_begin
             end_frame = trk.begin + loop_end
 
-            # Check if cache entry exists and handle updates efficiently.
+            key_name = pygame.key.name(slot_key)
+            cache_path = media.get_clip_sample_cache_filename(project_id, frag_id, key_name)
+
+            # Check if cache entry exists and is up-to-date
             if slot_key in self.slotted_samples:
                 cached_data = self.slotted_samples[slot_key]
-                # If frames match, we might only need to update the volume.
-                if cached_data['start_frame'] == start_frame and cached_data['end_frame'] == end_frame:
-                    cached_volume = cached_data.get('volume', 1.0)
-                    if abs(cached_volume - volume) > 1e-9: # Volume has changed
-                        cached_data['volume'] = volume
-                        print(f"Volume for cached slot {pygame.key.name(slot_key)} updated to {volume:.2f}.")
-                    else:
-                        # Everything is the same, no need to do anything.
-                        print(f"Audio for slot {pygame.key.name(slot_key)} already cached. Skipping.")
-                    return # Return whether volume was updated or not.
+                if (cached_data.get('path') == cache_path and
+                    cached_data.get('start_frame') == start_frame and
+                    cached_data.get('end_frame') == end_frame and
+                    abs(cached_data.get('volume', 1.0) - volume) < 1e-9):
+                    # print(f"Audio for slot {key_name} already cached and up-to-date.")
+                    return
 
-            # If we reach here, either the slot wasn't cached or the frames have changed.
-            # Proceed with full re-caching.
             self.k.status('B')
             try:
                 start_ms = (start_frame / base_fps) * 1000
                 end_ms = (end_frame / base_fps) * 1000
 
-                try:
-                    audio = AudioSegment.from_file(afn)
-                    sample = audio[start_ms:end_ms]
-                    self.slotted_samples[slot_key] = {
-                        'sample': sample,
-                        'start_frame': start_frame,
-                        'end_frame': end_frame,
-                        'base_fps': base_fps,
-                        'volume': volume
-                    }
-                    print(f"Audio for slot {pygame.key.name(slot_key)} cached ({len(sample)}ms).")
-                except (FileNotFoundError, CouldntDecodeError) as e:
-                    print(f"ERROR: Could not load or decode audio for slot {pygame.key.name(slot_key)}: {e}")
-                except Exception as e:
-                    self.k.bug(e)
+                audio = AudioSegment.from_file(afn)
+                sample = audio[start_ms:end_ms]
+                sample.export(cache_path, format="wav")
+
+                self.slotted_samples[slot_key] = {
+                    'path': cache_path,
+                    'start_frame': start_frame,
+                    'end_frame': end_frame,
+                    'base_fps': base_fps,
+                    'volume': volume
+                }
+                print(f"Audio for slot {key_name} cached to {cache_path} ({len(sample)}ms).")
+            except (FileNotFoundError, CouldntDecodeError) as e:
+                print(f"ERROR: Could not load or decode audio for slot {key_name}: {e}")
+            except Exception as e:
+                self.k.bug(e)
             finally:
                 self.k.status('U' if self.active else 'N')
 
@@ -293,25 +307,43 @@ class Mode:
         # Now, try to load it.
         if slot_key in self.slotted_samples:
             data = self.slotted_samples[slot_key]
-            self.sample = data['sample']
-            self.sample_start_frame = data['start_frame']
-            self.sample_end_frame = data['end_frame']
-            self.base_fps = data['base_fps']
-            self.volume = data.get('volume', 1.0)
-            self.active_slot_key = slot_key
+            cache_path = data.get('path')
 
-            if self.k.f_key_capturing:
-                self.k.f_key_current_actions.append(PlayerSetMusicVolume(self.volume))
+            if not cache_path or not os.path.exists(cache_path):
+                print(f"Cache file for slot {pygame.key.name(slot_key)} missing. Re-caching.")
+                self.cache_sample_for_slot(slot_key, actual_player)
+                data = self.slotted_samples.get(slot_key, {}) # Re-fetch data
+                cache_path = data.get('path')
 
-            # Stop any currently playing note before swapping
-            for note_data in self.active_notes.values():
-                if note_data['channel']:
-                    note_data['channel'].stop()
-            self.active_notes.clear()
+            if cache_path and os.path.exists(cache_path):
+                try:
+                    self.sample = AudioSegment.from_file(cache_path)
+                    self.sample_start_frame = data['start_frame']
+                    self.sample_end_frame = data['end_frame']
+                    self.base_fps = data['base_fps']
+                    self.volume = data.get('volume', 1.0)
+                    self.active_slot_key = slot_key
 
-            print(f"Loaded audio sample from slot {pygame.key.name(slot_key)}.")
-        else:
-            print(f"Failed to load audio sample for slot {pygame.key.name(slot_key)}.")
+                    action = PlayerSetMusicVolume(self.volume)
+                    if self.k.f_key_capturing:
+                        self.k.f_key_current_actions.append(action)
+                    # For main replay system
+                    if self.k.replays:
+                        self.k.replay_op(action)
+
+                    # Stop any currently playing note before swapping
+                    for note_data in self.active_notes.values():
+                        if note_data['channel']:
+                            note_data['channel'].stop()
+                    self.active_notes.clear()
+
+                    print(f"Loaded audio sample from slot {pygame.key.name(slot_key)}.")
+                except Exception as e:
+                    print(f"ERROR: Could not load cached sample from {cache_path}: {e}")
+                    self.sample = None
+            else:
+                print(f"Failed to load audio sample for slot {pygame.key.name(slot_key)} after re-caching attempt.")
+                self.sample = None
 
     def tick(self):
         """Called every frame. Looping for held notes is now handled by pygame.mixer."""
@@ -474,8 +506,12 @@ class Mode:
         if not self.sample or key in self.active_notes:
             return False
 
+        action = PlayerNoteOn(key, self.volume)
         if self.k.f_key_capturing:
-            self.k.f_key_current_actions.append(PlayerNoteOn(key, self.volume))
+            self.k.f_key_current_actions.append(action)
+        # For main replay system
+        if self.k.replays:
+            self.k.replay_op(action)
 
         current_pos_ms = 0
         is_pitch_change = bool(self.active_notes)
@@ -532,8 +568,12 @@ class Mode:
     def keyup(self, key):
         """Handles a key release event when music mode is active."""
         if key in self.active_notes:
+            action = PlayerNoteOff(key)
             if self.k.f_key_capturing:
-                self.k.f_key_current_actions.append(PlayerNoteOff(key))
+                self.k.f_key_current_actions.append(action)
+            # For main replay system
+            if self.k.replays:
+                self.k.replay_op(action)
 
             note_data = self.active_notes.pop(key)
             if note_data['channel']:

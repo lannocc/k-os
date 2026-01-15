@@ -193,6 +193,13 @@ class Player(KPanel):
         self.img = None
         self.playing = None
 
+    def _record_action(self, action):
+        """Dispatches a semantic player action to the appropriate recorder(s)."""
+        if self.k.f_key_capturing:
+            self.k.f_key_current_actions.append(action)
+        if self.k.replays:
+            self.k.replay_op(action)
+
     def kill(self, replace=False):
         self.stop(replace)
 
@@ -234,12 +241,10 @@ class Player(KPanel):
         if self.playing:
             return
 
-        if self.k.f_key_capturing:
-            # The action is recorded based on the new state
-            frag_id = self.get_or_create_frag_id()
-            if frag_id is not None:
-                current_frame = self.trk.frame
-                self.k.f_key_current_actions.append(PlayerPlay(frag_id, start_frame=current_frame))
+        frag_id = self.get_or_create_frag_id()
+        if frag_id is not None:
+            current_frame = self.trk.frame
+            self._record_action(PlayerPlay(frag_id, start_frame=current_frame))
 
         self.op_start()
         self.progress.enable()
@@ -259,8 +264,7 @@ class Player(KPanel):
         if not self.playing:
             return
 
-        if self.k.f_key_capturing:
-            self.k.f_key_current_actions.append(PlayerPause())
+        self._record_action(PlayerPause())
 
         self.op_stop()
         self.btn_pp.set_text('RESUME')
@@ -272,8 +276,7 @@ class Player(KPanel):
         if self.playing is None:
             return
 
-        if self.k.f_key_capturing:
-            self.k.f_key_current_actions.append(PlayerStop())
+        self._record_action(PlayerStop())
 
         self.reset()
 
@@ -284,9 +287,8 @@ class Player(KPanel):
     def seek(self, frame):
         self.k.flash_player_indicator()
 
-        if self.k.f_key_capturing:
-            # Record absolute frame number for the tracker
-            self.k.f_key_current_actions.append(PlayerSeek(frame + self.trk.begin))
+        # Record absolute frame number for the tracker
+        self._record_action(PlayerSeek(frame + self.trk.begin))
 
         if self.playing and self.pdrag \
                 and frame + self.trk.begin == self.trk.end:
@@ -331,8 +333,7 @@ class Player(KPanel):
             new_volume = max(0.0, min(1.0, self.volume + change))
             if new_volume != self.volume:
                 self.volume = new_volume
-                if self.k.f_key_capturing:
-                    self.k.f_key_current_actions.append(PlayerSetVolume(self.volume))
+                self._record_action(PlayerSetVolume(self.volume))
                 if hasattr(self.trk, 'res') and hasattr(self.trk.res, 'audio'):
                     if not self.k.music.active or not self.k.music.active_notes:
                         self.trk.res.audio.set_volume(self.volume)
@@ -466,14 +467,6 @@ class Player(KPanel):
     def click(self, element, target=None):
         if element is self.btn_pp:
             self.pause() if self.playing else self.play()
-            if self.k.f_key_capturing:
-                # The action is recorded based on the new state
-                if self.playing:
-                    frag_id = getattr(self, 'frag_id', None)
-                    if frag_id is not None:
-                         self.k.f_key_current_actions.append(PlayerPlay(frag_id))
-                else:
-                    self.k.f_key_current_actions.append(PlayerPause())
 
         elif element is self.btn_save:
             self.k.job(self.save)
@@ -538,8 +531,7 @@ class Player(KPanel):
         if self.playback_speed == speed and self.playback_direction == direction:
             return
 
-        if self.k.f_key_capturing:
-            self.k.f_key_current_actions.append(PlayerSetSpeed(speed, direction))
+        self._record_action(PlayerPlaybackSpeed(speed, direction))
 
         self.playback_speed = speed
         self.playback_direction = direction
@@ -584,6 +576,20 @@ class Player(KPanel):
                 current_volume = float(loop_data.get('volume', 1.0))
                 new_volume = round(max(0.0, min(1.0, current_volume + volume_change)), 2)
                 loop_data['volume'] = new_volume
+
+                # Persist the volume change to the database
+                project_id = self.k.panel_project.panel_studio.project_id
+                if project_id:
+                    actions_str = "\n".join([a.format() for a in loop_data['actions']])
+                    kdb.upsert_f_track(
+                        project_id,
+                        held_f_key,
+                        actions_str,
+                        loop_data['duration'],
+                        new_volume,
+                        loop_data.get('locked', False),
+                        loop_data.get('music_context_json')
+                    )
 
                 if held_f_key in self.k.player.loop_players:
                     self.k.player.loop_players[held_f_key].set_volume(new_volume)
@@ -836,6 +842,7 @@ class Player(KPanel):
             if nomod:
                 if not man:
                     self.keyhold(key, True)
+                    self._record_action(PlayerJump(key - pygame.K_KP1))
                 self.seek(self.jumps[key - pygame.K_KP1])
             elif ctrl and not man:
                 idx = key - pygame.K_KP1
@@ -847,19 +854,10 @@ class Player(KPanel):
 
         elif key == pygame.K_KP_PERIOD:
             if self.playing:
-                #if self.holding == 0 or self.holding is None:
-                #    self.op_hold()
-                #    self.flast = self.trk.frame
-                #    self.holding = -1 * key
-                #elif self.holding > 0:
-                #    self.op_hold()
-                #    self.holding = -1 * self.holding
-                #else:
-                #    #print('how did this happen (key already down)?')
-                #    pass
                 if man:
                     self.seek(self.flast)
                 else:
+                    self._record_action(PlayerHoldStart())
                     self.keyhold(key, True)
                     #self.holding.append(key)
 
@@ -869,8 +867,7 @@ class Player(KPanel):
                 if self.loop_begin > self.loop_end:
                     self.loop_end = self.trk.end - self.trk.begin
                 self.draw_loop_bar()
-                #if self.btn_save:
-                #    self.btn_save.enable()
+                self._record_action(PlayerSetLoopStart())
 
         elif key == pygame.K_KP_MULTIPLY:
             if nomod:
@@ -878,16 +875,14 @@ class Player(KPanel):
                 if self.loop_end < self.loop_begin:
                     self.loop_begin = 0
                 self.draw_loop_bar()
-                #if self.btn_save:
-                #    self.btn_save.enable()
+                self._record_action(PlayerSetLoopEnd())
 
         elif key == pygame.K_KP_PLUS:
             if nomod:
                 if not self.loop:
                     self.loop = True
                     self.draw_loop_bar()
-                    #if self.btn_save:
-                    #    self.btn_save.enable()
+                    self._record_action(PlayerLoopToggle(True))
 
                 #self.keyhold(key)
                 self.seek(self.loop_begin)
@@ -897,8 +892,7 @@ class Player(KPanel):
                 if self.loop:
                     self.loop = False
                     self.draw_loop_bar()
-                    #if self.btn_save:
-                    #    self.btn_save.enable()
+                    self._record_action(PlayerLoopToggle(False))
 
                 if not man:
                     self.keyhold(key)
@@ -932,26 +926,13 @@ class Player(KPanel):
             self.hold_loop_override = False
             self.hold_loop_key = None
 
+        if key == pygame.K_KP_PERIOD:
+            if key in self.holding:
+                self._record_action(PlayerHoldEnd())
+
         if key == pygame.K_ESCAPE:
             self.k.player.killall()
             return
-
-        #if self.holding < 0:
-        #    self.holding = -1 * self.holding
-
-        #    if self.holding == key:
-        #        self.holding = 0
-
-        #    self.op_unhold()
-
-        #elif self.holding == 0:
-        #    if key == pygame.K_KP0:
-        #        self.seek(self.loop_begin)
-        #    elif key >= pygame.K_KP1 and key <= pygame.K_KP9:
-        #        self.seek(self.jumps[key - pygame.K_KP1])
-
-        #else:
-        #    self.holding = 0
 
         while key in self.holding:
             idx = self.holding.index(key)

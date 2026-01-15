@@ -145,9 +145,11 @@ class LoopPlayer:
         loaded_sample = None
         base_fps = None
 
-        if isinstance(music_context, str): # JSON from DB
-            if PYDUB_AVAILABLE:
-                try:
+        if PYDUB_AVAILABLE and isinstance(music_context, str):
+            try:
+                if music_context.endswith('.wav') and os.path.exists(music_context):
+                    loaded_sample = AudioSegment.from_file(music_context)
+                else:
                     context = json.loads(music_context)
                     video_id, start_frame, end_frame, base_fps = context['source_video_id'], context['start_frame'], context['end_frame'], context['base_fps']
                     audio_path = media.get_audio(video_id)
@@ -158,14 +160,14 @@ class LoopPlayer:
                         loaded_sample = full_audio[int(start_ms):int(end_ms)]
                     else:
                         print(f"ERROR: Could not find audio for video {video_id} at {audio_path}")
-                except Exception as e:
-                    print(f"ERROR loading music context from JSON for loop player: {e}")
-                    traceback.print_exc()
+            except Exception as e:
+                print(f"ERROR loading music context from for loop player: {e}")
+                traceback.print_exc()
         elif isinstance(music_context, dict): # Live object from in-session loop
             loaded_sample = music_context['sample']
             base_fps = music_context['base_fps']
 
-        if loaded_sample and base_fps is not None:
+        if loaded_sample:
              self.music_player = MicroMusicPlayer(
                 loaded_sample,
                 base_fps,
@@ -301,7 +303,7 @@ class LoopPlayer:
                     if not self.music_player.active_notes:  # Last note was released
                         self.internal_player_muted = False
                         self.apply_internal_player_volume()
-                elif isinstance(action, PlayerSetSpeed):
+                elif isinstance(action, PlayerPlaybackSpeed):
                     self.speed = action.speed
                     self.direction = action.direction
                     if self.internal_player and self.internal_player.trk:

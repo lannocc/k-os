@@ -212,6 +212,10 @@ class Entry(KPanel):
         if not player.go:
             return None
         self.k.player.open(player, stacked=stack)
+
+        if self.k.music.active:
+            self.k.job(self.k.music.cache_all_slots_for_player, args=(player.go,))
+
         self.k.player.play()
         return player
 

@@ -49,6 +49,12 @@ def get_audio(video_id):
 def get_frag_thumbnail(project_id, frag_id):
     return join(PROJECTS, str(project_id), f'{frag_id}.jpg')
 
+def get_fkey_cache_filename(project_id, fkey_name):
+    return join(PROJECTS, str(project_id), 'cache', f'fkey_{fkey_name}.wav')
+
+def get_clip_sample_cache_filename(project_id, frag_id, key_name):
+    return join(PROJECTS, str(project_id), 'cache', f'clip_{frag_id}_slot_{key_name}.wav')
+
 def delete_frag_thumbnail(project_id, frag_id):
     fn = get_frag_thumbnail(project_id, frag_id)
     if exists(fn):
@@ -58,6 +64,7 @@ def start_project(project_id):
     folder = join(PROJECTS, str(project_id))
     print(f'creating project folder: {folder}')
     mkdir(folder)
+    mkdir(join(folder, 'cache'))
 
 def delete_project_folder(project_id):
     folder = join(PROJECTS, str(project_id))

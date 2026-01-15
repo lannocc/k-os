@@ -585,7 +585,7 @@ class OS:
                     if actual_player:
                         speed = getattr(actual_player, 'playback_speed', 1.0)
                         direction = getattr(actual_player, 'playback_direction', 1)
-                        self.f_key_current_actions.append(PlayerSetSpeed(speed, direction, t=initial_action.t))
+                        self.f_key_current_actions.append(PlayerPlaybackSpeed(speed, direction, t=initial_action.t))
 
                         # Also capture initial volume
                         volume = getattr(actual_player, 'volume', 1.0)

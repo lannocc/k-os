@@ -4,6 +4,7 @@ import k.storage as media
 from .library import Panel as Library
 from .review import Panel as Review
 from .ops import *
+from k.player.actions import PlayerAction
 
 from datetime import datetime
 
@@ -90,7 +91,12 @@ class Panel(KPanel):
             return
 
         if not self.capture:
-            if isinstance(op, MouseAction) or isinstance(op, KeyAction):
+            # When not in screen capture mode, we still want to record high-level
+            # semantic player actions, but not low-level mouse/key events.
+            is_player_action = isinstance(op, PlayerAction)
+            is_low_level_ui = isinstance(op, MouseAction) or isinstance(op, KeyAction)
+
+            if is_low_level_ui and not is_player_action:
                 return
 
         self.ops.append(op)

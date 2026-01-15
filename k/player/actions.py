@@ -101,24 +101,6 @@ class PlayerNoteOff(PlayerAction):
         return super().format(started) + str(self.key)
 
 
-class PlayerSetSpeed(PlayerAction):
-    def __init__(self, speed, direction, t=None):
-        super().__init__(t)
-        self.speed = speed
-        self.direction = direction
-
-    @classmethod
-    def parse(cls, t, data_str):
-        if data_str is None:
-            raise ParseError("PlayerSetSpeed action requires speed and direction", f"{t}:")
-        parts = data_str.split(',')
-        speed = float(parts[0])
-        direction = int(parts[1])
-        return cls(speed, direction, t)
-
-    def format(self, started=None):
-        return super().format(started) + f"{self.speed},{self.direction}"
-
 class PlayerSetVolume(PlayerAction):
     def __init__(self, volume, t=None):
         super().__init__(t)
@@ -149,6 +131,104 @@ class PlayerSetMusicVolume(PlayerAction):
         return super().format(started) + str(self.volume)
 
 
+class PlayerHoldStart(PlayerAction):
+    def __init__(self, t=None):
+        super().__init__(t)
+
+    @classmethod
+    def parse(cls, t, data_str):
+        return cls(t)
+
+    def format(self, started=None):
+        return super().format(started)
+
+
+class PlayerHoldEnd(PlayerAction):
+    def __init__(self, t=None):
+        super().__init__(t)
+
+    @classmethod
+    def parse(cls, t, data_str):
+        return cls(t)
+
+    def format(self, started=None):
+        return super().format(started)
+
+
+class PlayerJump(PlayerAction):
+    def __init__(self, index, t=None):
+        super().__init__(t)
+        self.index = index
+
+    @classmethod
+    def parse(cls, t, data_str):
+        if data_str is None:
+            raise ParseError("PlayerJump action requires an index", f"{t}:")
+        return cls(int(data_str), t)
+
+    def format(self, started=None):
+        return super().format(started) + str(self.index)
+
+
+class PlayerSetLoopStart(PlayerAction):
+    def __init__(self, t=None):
+        super().__init__(t)
+
+    @classmethod
+    def parse(cls, t, data_str):
+        return cls(t)
+
+    def format(self, started=None):
+        return super().format(started)
+
+
+class PlayerSetLoopEnd(PlayerAction):
+    def __init__(self, t=None):
+        super().__init__(t)
+
+    @classmethod
+    def parse(cls, t, data_str):
+        return cls(t)
+
+    def format(self, started=None):
+        return super().format(started)
+
+
+class PlayerLoopToggle(PlayerAction):
+    def __init__(self, state, t=None):
+        super().__init__(t)
+        self.state = state  # boolean
+
+    @classmethod
+    def parse(cls, t, data_str):
+        if data_str is None:
+            raise ParseError("PlayerLoopToggle action requires a state", f"{t}:")
+        return cls(bool(int(data_str)), t)
+
+    def format(self, started=None):
+        return super().format(started) + str(int(self.state))
+
+
+# This replaces the old PlayerSetSpeed action.
+class PlayerPlaybackSpeed(PlayerAction):
+    def __init__(self, speed, direction, t=None):
+        super().__init__(t)
+        self.speed = speed
+        self.direction = direction
+
+    @classmethod
+    def parse(cls, t, data_str):
+        if data_str is None:
+            raise ParseError("PlayerPlaybackSpeed action requires speed and direction", f"{t}:")
+        parts = data_str.split(',')
+        speed = float(parts[0])
+        direction = int(parts[1])
+        return cls(speed, direction, t)
+
+    def format(self, started=None):
+        return super().format(started) + f"{self.speed},{self.direction}"
+
+
 # IMPORTANT:
 # We are extending the main ACTIONS list from replay.ops here.
 # This is a bit of a hack, but it keeps the player-specific actions
@@ -162,7 +242,13 @@ ACTIONS.extend([
     PlayerSeek,
     PlayerNoteOn,
     PlayerNoteOff,
-    PlayerSetSpeed,
+    PlayerPlaybackSpeed, # Formerly PlayerSetSpeed
     PlayerSetVolume,
     PlayerSetMusicVolume,
+    PlayerHoldStart,
+    PlayerHoldEnd,
+    PlayerJump,
+    PlayerSetLoopStart,
+    PlayerSetLoopEnd,
+    PlayerLoopToggle,
 ])
