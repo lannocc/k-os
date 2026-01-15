@@ -41,6 +41,7 @@ class Mode:
 
         self.ffmpeg_checked = False
         self.ffmpeg_available = False
+        self.live_reload_active_sample = None # Tuple (note_key, pos_ms) for live adjustment
 
         # This mapping provides a two-octave+ range based on a standard virtual
         # piano layout for QWERTY keyboards.

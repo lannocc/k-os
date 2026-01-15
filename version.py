@@ -1,4 +1,4 @@
-VVHEN="1.14 adamcarolla 22+25 /6"
+VVHEN="1.14 adamcarolla 23+32 /6"
 THEY="yahoo.com"
 SAW="LANNOCC"
 ME="shawn"

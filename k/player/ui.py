@@ -161,6 +161,15 @@ class Player(KPanel):
         self.volume_direction = 0  # -1 for down, 0 for none, 1 for up
         self._last_vol_update_time = 0
 
+        self.selection_buffer = None
+
+        # Boundary adjustment state
+        self.adjusting_target = None
+        self.adjusting_boundary = 'end'
+        self.adjustment_direction = 0
+        self.adjustment_start_time = 0
+        self.last_adjustment_time = 0
+
         self.reset()
 
     def reset(self):
@@ -178,6 +187,7 @@ class Player(KPanel):
         self.music_mode_override = False
         self.hold_loop_override = False
         self.hold_loop_key = None
+        self.selection_buffer = None
         self.playback_direction = 1
         if hasattr(self.trk, 'set_direction'):
             self.trk.set_direction(1)
@@ -188,6 +198,10 @@ class Player(KPanel):
         self.volume = 1.0
         if hasattr(self.trk, 'res') and hasattr(self.trk.res, 'audio'):
             self.trk.res.audio.set_volume(self.volume)
+
+        self.adjusting_target = None
+        self.adjustment_direction = 0
+        self.last_adjustment_time = 0
 
         self.trk.reset()
         self.img = None
@@ -310,6 +324,28 @@ class Player(KPanel):
         self.lbl_frame.set_text(str(frame))
 
     def tick(self):
+        if self.adjustment_direction != 0:
+            now = time.perf_counter()
+            time_held = now - self.adjustment_start_time
+            time_since_last = now - self.last_adjustment_time
+
+            # Start repeating after a short delay
+            if time_held > 0.4:
+                # Determine step size and interval based on hold duration
+                if time_held > 2.0:
+                    step = 20
+                    interval = 0.05 # 20Hz
+                elif time_held > 1.0:
+                    step = 5
+                    interval = 0.1 # 10Hz
+                else:
+                    step = 1
+                    interval = 0.15 # ~6.6Hz
+
+                if time_since_last >= interval:
+                    self._apply_adjustment(step)
+                    self.last_adjustment_time = now
+
         # Handle shift-key override for save button text
         if self.btn_save and self.frag_id:
             keys = pygame.key.get_pressed()
@@ -544,14 +580,142 @@ class Player(KPanel):
     def toggle_playback_direction(self):
         self.set_playback_speed(self.playback_speed, -self.playback_direction)
 
+    def _apply_adjustment(self, step):
+        if not self.adjusting_target:
+            return
+
+        adj = step * self.adjustment_direction
+        target_type, target_key = self.adjusting_target
+
+        if target_type == 'player':
+            if self.adjusting_boundary == 'start':
+                self.loop_begin = max(0, self.loop_begin + adj)
+                if self.loop_begin >= self.loop_end:
+                    self.loop_begin = self.loop_end - 1
+            else:  # end
+                self.loop_end = min(self.trk.frames - 1, self.loop_end + adj)
+                if self.loop_end <= self.loop_begin:
+                    self.loop_end = self.loop_begin + 1
+            self.draw_loop_bar()
+
+        elif target_type == 'sample':
+            region = list(self.selection_regions[target_key])
+            loop_begin, loop_end = region[0], region[1]
+
+            if self.adjusting_boundary == 'start':
+                loop_begin = max(0, loop_begin + adj)
+                if loop_begin >= loop_end:
+                    loop_begin = loop_end - 1
+            else:  # end
+                loop_end = min(self.trk.frames - 1, loop_end + adj)
+                if loop_end <= loop_begin:
+                    loop_end = loop_begin + 1
+            
+            region[0], region[1] = loop_begin, loop_end
+            self.selection_regions[target_key] = tuple(region)
+
+            clip_id = self.get_or_create_frag_id()
+            if clip_id is not None:
+                kdb.set_clip_selection_regions(clip_id, json.dumps(self.selection_regions))
+            
+            if self.k.music.active:
+                self.k.music.cache_sample_for_slot(target_key, self)
+
+                if self.k.music.live_reload_active_sample:
+                    note_key, pos_ms = self.k.music.live_reload_active_sample
+                    self.k.music.load_slotted_sample(target_key)
+                    self.k.music._play_note(note_key, start_ms=pos_ms)
+
+
+            self.k.status()
+            self.draw_loop_bar()
+
+        elif target_type == 'f_key':
+            loop_data = self.k.f_key_loops[target_key]
+            
+            was_playing = target_key in self.k.player.loop_players
+            if was_playing:
+                self.k.player.toggle_loop(target_key, None)
+
+            if loop_data.get('music_context_json'):
+                try:
+                    context = json.loads(loop_data['music_context_json'])
+                    start_frame = context['start_frame']
+                    end_frame = context['end_frame']
+                    
+                    if self.adjusting_boundary == 'start':
+                        start_frame = max(0, start_frame + adj)
+                        if start_frame >= end_frame:
+                            start_frame = end_frame - 1
+                        context['start_frame'] = start_frame
+                    else:
+                        end_frame += adj
+                        if end_frame <= start_frame:
+                            end_frame = start_frame + 1
+                        context['end_frame'] = end_frame
+
+                    loop_data['music_context_json'] = json.dumps(context)
+                    
+                    base_fps = context.get('base_fps', self.trk.res.fps if hasattr(self.trk, 'res') else 30)
+                    if base_fps > 0:
+                        loop_data['duration'] = (end_frame - start_frame) / base_fps
+                    
+                    project_id = self.k.panel_project.panel_studio.project_id
+                    if project_id:
+                        self.k.panel_project.panel_studio.cache_fkey_loop(
+                            project_id, target_key, json.dumps(context)
+                        )
+                except (json.JSONDecodeError, KeyError):
+                    print("Error adjusting music context for F-key loop.")
+            else:
+                fps = self.trk.res.fps if hasattr(self.trk, 'res') else 30
+                delta_seconds = adj / fps
+                if self.adjusting_boundary == 'start':
+                    # Adjusting from the start means changing duration AND shifting all action timestamps.
+                    new_duration = loop_data['duration'] - delta_seconds
+
+                    # Prevent loop from becoming too short or inverted
+                    if new_duration < 0.1:
+                        # We tried to shrink too much. Calculate how much we over-shrunk.
+                        over_shrink = 0.1 - new_duration
+                        # Reduce the effective delta_seconds by that amount.
+                        delta_seconds -= over_shrink
+                        new_duration = 0.1
+                    loop_data['duration'] = new_duration
+                    
+                    # Timestamps are in microseconds. Shift them.
+                    delta_t_us = int(delta_seconds * PRECISION)
+                    for action in loop_data['actions']:
+                        action.t = max(0, action.t - delta_t_us)
+                else:  # 'end'
+                    loop_data['duration'] = max(0.1, loop_data['duration'] + delta_seconds)
+
+            project_id = self.k.panel_project.panel_studio.project_id
+            if project_id:
+                actions_str = "\n".join([a.format() for a in loop_data['actions']])
+                kdb.upsert_f_track(
+                    project_id,
+                    target_key,
+                    actions_str,
+                    loop_data['duration'],
+                    loop_data['volume'],
+                    loop_data.get('locked', False),
+                    loop_data.get('music_context_json')
+                )
+            
+            if was_playing:
+                self.k.player.toggle_loop(target_key, loop_data)
+
+            self.k.status()
+
     def keydown(self, key, mod, keys_down=None):
         #print(f'{self.holding} DOWN {key}')
+        print(f'XXX PLAYER KEYDOWN {key}, {mod}, {keys_down}')
         pygame.key.set_repeat(0)
 
         man = False
         alt = False
         ctrl = False
-        shift = False
 
         if mod == MOD_MAN:
             man = True
@@ -559,8 +723,84 @@ class Player(KPanel):
         else:
             alt = mod & pygame.KMOD_ALT
             ctrl = mod & pygame.KMOD_CTRL
-            shift = mod & pygame.KMOD_SHIFT or mod & pygame.KMOD_LSHIFT \
-                or mod & pygame.KMOD_RSHIFT
+        
+        shift = self.k.shifting
+        nomod = not alt and not ctrl and not shift
+
+        if (key == pygame.K_EQUALS or key == pygame.K_MINUS or key == pygame.K_UNDERSCORE or key == pygame.K_PLUS) and keys_down is not None:
+            print('XXX BOOM')
+            if self.adjustment_direction != 0:
+                return True 
+
+            held_f_key = next((k for k in keys_down if pygame.K_F1 <= k <= pygame.K_F12 and k != key), None)
+            held_num_key = next((k for k in keys_down if k in self.selection_slot_order and k != key), None)
+
+            target_type = None
+            target_key = None
+            if held_f_key and held_f_key in self.k.f_key_loops:
+                target_type = 'f_key'
+                target_key = held_f_key
+            elif held_num_key and held_num_key in self.selection_regions:
+                target_type = 'sample'
+                target_key = held_num_key
+            else:
+                target_type = 'player'
+                target_key = None
+            self.adjusting_target = (target_type, target_key)
+            
+            # The OS class now reliably tracks shift state.
+            is_shift_held = self.k.shifting
+            
+            self.adjusting_boundary = 'start' if is_shift_held or key == pygame.K_UNDERSCORE or key == pygame.K_PLUS else 'end'
+            self.adjustment_direction = 1 if key == pygame.K_EQUALS or key == pygame.K_PLUS else -1
+            self.adjustment_start_time = time.perf_counter()
+
+            # Special handling for live-reloading of music samples
+            if target_type == 'sample' and self.k.music.active and self.k.music.active_slot_key == target_key and self.k.music.active_notes:
+                self.k.music.live_reload_active_sample = (
+                    list(self.k.music.active_notes.keys())[0], self.k.music._get_current_pos_ms()
+                )
+
+            self._apply_adjustment(1)
+            self.last_adjustment_time = time.perf_counter()
+            return True
+
+        if alt and not ctrl and not shift and keys_down is not None:
+            if key in self.selection_slot_order:
+                target_key = key
+                source_key = None
+                for k in keys_down:
+                    if k in self.selection_slot_order and k != target_key:
+                        source_key = k
+                        break
+
+                if source_key and source_key in self.selection_regions:
+                    target_region_data = self.selection_regions.get(target_key)
+                    is_target_locked = target_region_data and len(target_region_data) > 3 and target_region_data[3]
+
+                    if is_target_locked:
+                        print(f"Sample slot {self.selection_key_map.get(target_key, target_key)} is locked and cannot be overwritten.")
+                        return True
+
+                    print(f"Copying sample from slot {self.selection_key_map.get(source_key, source_key)} to {self.selection_key_map.get(target_key, target_key)}...")
+                    self.selection_regions[target_key] = self.selection_regions[source_key]
+
+                    # Ensure new copy is unlocked
+                    new_data = list(self.selection_regions[target_key])
+                    if len(new_data) < 3: new_data.append(1.0) # volume
+                    if len(new_data) < 4: new_data.append(False) # locked
+                    new_data[3] = False
+                    self.selection_regions[target_key] = tuple(new_data)
+
+                    clip_id = self.get_or_create_frag_id()
+                    if clip_id is not None:
+                        kdb.set_clip_selection_regions(clip_id, json.dumps(self.selection_regions))
+
+                    if self.k.music.active:
+                        self.k.music.cache_sample_for_slot(target_key, self)
+
+                    self.k.status()
+                    return True
 
         # Adjust individual track/sample volume
         if (key == pygame.K_PAGEUP or key == pygame.K_PAGEDOWN) and keys_down is not None:
@@ -670,8 +910,6 @@ class Player(KPanel):
                     print(f"No selection in slot {self.selection_key_map.get(key, key)} to lock.")
                 return True
 
-        nomod = not alt and not ctrl and not shift
-
         if nomod and key == pygame.K_SLASH:
             self.toggle_playback_direction()
             return
@@ -737,16 +975,43 @@ class Player(KPanel):
                         print(f"No selection in slot {self.selection_key_map.get(key, key)}")
                 return  # event handled
             elif key == pygame.K_BACKQUOTE:
-                # Load from default slot, swapping with current.
-                if pygame.K_BACKQUOTE in self.selection_regions:
-                    current_selection = (self.loop_begin, self.loop_end, self.volume)
-                    self.loop_begin, self.loop_end, self.volume = self.selection_regions[pygame.K_BACKQUOTE]
-                    self.selection_regions[pygame.K_BACKQUOTE] = current_selection
-                    print(f"Swapped current selection with default slot `")
+                # Second Press (Swap Back): This is independent of mode.
+                if self.selection_buffer is not None:
+                    self.loop_begin, self.loop_end = self.selection_buffer
+                    self.selection_buffer = None
+                    print("Restored original selection.")
                     self.draw_loop_bar()
+                    return True
+
+                # First Press (Swap In):
+                target_slot_key = None
+                in_music_mode = self.k.music.active
+                if in_music_mode:
+                    target_slot_key = self.k.music.active_slot_key
+                elif keys_down is not None:
+                    for num_key in self.selection_slot_order:
+                        if num_key in keys_down and num_key != key:
+                            target_slot_key = num_key
+                            break
+
+                if target_slot_key is None:
+                    print("Quick-swap: No active music sample, and no number key held.")
+                    return True
+
+                if target_slot_key in self.selection_regions:
+                    self.selection_buffer = (self.loop_begin, self.loop_end)
+                    region = self.selection_regions[target_slot_key]
+                    self.loop_begin, self.loop_end, *_ = region
+
+                    slot_name = self.selection_key_map.get(target_slot_key)
+                    combo = "`" if in_music_mode else f"` + {slot_name}"
+                    print(f"Auditioning selection from slot {slot_name}. Press {combo} again to swap back.")
                 else:
-                    print("No selection in default slot `")
-                return  # event handled
+                    slot_name = self.selection_key_map.get(target_slot_key)
+                    print(f"Slot {slot_name} has no selection to audition.")
+
+                self.draw_loop_bar()
+                return True
 
         if key == pygame.K_PAGEUP:
             self.volume_direction = 1
@@ -811,6 +1076,7 @@ class Player(KPanel):
                 self.keyhold(key)
 
             if nomod:
+                print('XXX SEEK LEFT')
                 self.seek(self.trk.frame - SEEK_HORIZ)
             elif ctrl:
                 self.seek(self.trk.frame - SEEK_HORIZ_CTRL)
@@ -901,6 +1167,15 @@ class Player(KPanel):
 
     def keyup(self, key, mod):
         #print(f'{self.holding} UP {key}')
+        if key == pygame.K_EQUALS or key == pygame.K_MINUS or key == pygame.K_UNDERSCORE or key == pygame.K_PLUS:
+            self.adjustment_direction = 0
+            self.adjusting_target = None
+            self.adjustment_start_time = 0
+            self.last_adjustment_time = 0
+            if self.k.music.active:
+                self.k.music.live_reload_active_sample = None
+            return
+
         if key == pygame.K_BACKSPACE:
             # This handler is called after the OS-level backspace keyup handler.
             # The k.backspace_action_taken flag is shared state.

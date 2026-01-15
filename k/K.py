@@ -25,11 +25,16 @@ import traceback
 import time
 from html import escape
 import json
+import copy
 
 
 # NEW CONSTANTS for player indicator colors and modifier keys
 BLUE_VIOLET = (138, 43, 226)
 RED_VIOLET = (199, 21, 133)
+# Ratios for finding musically-related loop lengths.
+MUSICAL_RATIOS = [
+    1/4, 1/3, 1/2, 2/3, 3/4, 1.0, 4/3, 3/2, 2.0, 3.0, 4.0
+]
 MODIFIER_KEYS = {
     pygame.K_LSHIFT, pygame.K_RSHIFT,
     pygame.K_LCTRL, pygame.K_RCTRL,
@@ -447,6 +452,7 @@ class OS:
             pass
 
         elif event.type == pygame.KEYDOWN:
+            print(f'XXX KEYDOWN {event.key}')
             self.keys_down.add(event.key)
             self.replay_op(KeyDown(event.scancode))
 
@@ -535,6 +541,39 @@ class OS:
                     self._find_next_unlocked_f_key_slot()
                 else:
                     print(f"No loop saved to {pygame.key.name(event.key).upper()} to lock.")
+
+            elif alt and not ctrl and not shift and pygame.K_F1 <= event.key <= pygame.K_F12:
+                target_key = event.key
+                source_key = None
+                for k in self.keys_down:
+                    if pygame.K_F1 <= k <= pygame.K_F12 and k != target_key:
+                        source_key = k
+                        break
+
+                if source_key and source_key in self.f_key_loops:
+                    if self.f_key_loops.get(target_key, {}).get('locked', False):
+                        print(f"Track {pygame.key.name(target_key).upper()} is locked and cannot be overwritten.")
+                        return
+
+                    print(f"Copying track {pygame.key.name(source_key).upper()} to {pygame.key.name(target_key).upper()}...")
+                    self.f_key_loops[target_key] = copy.deepcopy(self.f_key_loops[source_key])
+                    self.f_key_loops[target_key]['locked'] = False
+
+                    project_id = self.panel_project.panel_studio.project_id
+                    if project_id:
+                        new_track = self.f_key_loops[target_key]
+                        actions_str = "\n".join([a.format() for a in new_track['actions']])
+                        kdb.upsert_f_track(
+                            project_id,
+                            target_key,
+                            actions_str,
+                            new_track['duration'],
+                            new_track['volume'],
+                            new_track['locked'],
+                            new_track.get('music_context_json')
+                        )
+                    self.status()
+                    return
 
             elif event.key == pygame.K_ESCAPE:
                 if self.player.big:
@@ -625,6 +664,11 @@ class OS:
                         self.score()
 
                 else:
+                    if event.key == pygame.K_LSHIFT or event.key == pygame.K_RSHIFT:
+                        self.shifting = True
+                    elif event.key == pygame.K_LCTRL or event.key == pygame.K_RCTRL:
+                        self.control = True
+
                     if self.music.active and self.music.keydown(event.key, event.mod):
                         # Music mode handled the key, do nothing more.
                         pass
@@ -634,12 +678,6 @@ class OS:
 
                         if not self.ack and not self.player.big:
                             self.cur_panel.keydown(event.key, event.mod)
-
-                            if event.key == pygame.K_LSHIFT or event.key == pygame.K_RSHIFT:
-                                self.shifting = True
-
-                            elif event.key == pygame.K_LCTRL or event.key == pygame.K_RCTRL:
-                                self.control = True
 
         elif event.type == pygame.KEYUP:
             self.keys_down.discard(event.key)
@@ -670,6 +708,13 @@ class OS:
                     self.player.killall()
 
             elif not self.confirming:
+                if event.key == pygame.K_LSHIFT \
+                        or event.key == pygame.K_RSHIFT:
+                    self.shifting = False
+                elif event.key == pygame.K_LCTRL \
+                        or event.key == pygame.K_RCTRL:
+                    self.control = False
+
                 if self.music.active and self.music.keyup(event.key):
                     # Music mode handled the key, do nothing more.
                     pass
@@ -678,14 +723,6 @@ class OS:
 
                     if not self.ack and not self.player.big:
                         self.cur_panel.keyup(event.key, event.mod)
-
-                    if event.key == pygame.K_LSHIFT \
-                            or event.key == pygame.K_RSHIFT:
-                        self.shifting = False
-
-                    elif event.key == pygame.K_LCTRL \
-                            or event.key == pygame.K_RCTRL:
-                        self.control = False
 
         elif event.type == pygame.MOUSEMOTION:
             self.replay_op(MouseMove(event.pos[0], event.pos[1]))
@@ -889,6 +926,27 @@ class OS:
                     volume = self.f_key_loops[key]['volume']
                     color = RED
 
+                # Check for loop sync indicator and override color if necessary
+                if key in self.keys_down and key in self.f_key_loops:
+                    is_synced = False
+                    held_duration = self.f_key_loops[key].get('duration', 0)
+                    if held_duration > 0:
+                        for loop_player in self.player.loop_players.values():
+                            if loop_player.key == key: continue # Don't compare with self
+
+                            playing_duration = loop_player.duration
+                            if playing_duration > 0:
+                                ratio = held_duration / playing_duration
+                                for musical_ratio in MUSICAL_RATIOS:
+                                    # Use a 5% relative tolerance to check for a match
+                                    if abs(ratio - musical_ratio) < musical_ratio * 0.05:
+                                        is_synced = True
+                                        break
+                            if is_synced:
+                                break
+                    if is_synced:
+                        color = ORANGE
+
                 if color:
                     # Draw border for this specific key
                     key_rect = pygame.Rect(track_x, track_y, self.TRACK_W, self.TRACKS_H)
@@ -910,7 +968,7 @@ class OS:
 
                     # Determine text color and re-draw text
                     text_color = WHITE
-                    if color in [GREEN, RED]:
+                    if color in [GREEN, RED, ORANGE]:
                         text_color = BLACK
 
                     text_surf = self.tracks_font.render(str(i + 1), True, text_color)
@@ -1331,12 +1389,6 @@ class OS:
         # to maintain rhythmic synchronization.
         active_loop_players = self.player.loop_players.values()
         if active_loop_players:
-            # Ratios derived from user request (multiples of 2 and 3)
-            # for finding musically-related loop lengths.
-            ratios = [
-                1/4, 1/3, 1/2, 2/3, 3/4, 1.0, 4/3, 3/2, 2.0, 3.0, 4.0
-            ]
-
             best_conformed_duration = duration
             min_diff = float('inf')
 
@@ -1347,7 +1399,7 @@ class OS:
                     continue
 
                 # 1. Check against explicit musical ratios
-                for ratio in ratios:
+                for ratio in MUSICAL_RATIOS:
                     candidate_duration = active_duration * ratio
                     diff = abs(candidate_duration - duration)
                     if diff < min_diff:
