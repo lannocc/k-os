@@ -4,6 +4,7 @@ import k.storage as media
 #import k.player.engine as kpengine
 #import k.player.project as kplaystud
 from k.player.frag import Chaos as Player
+import os
 
 
 class Panel(KPanel):
@@ -129,9 +130,19 @@ class Entry(KPanel):
             container=self.container,
             relative_rect=pygame.Rect((25, 30), (50, 30)))
 
+        thumbnail_path = media.get_frag_thumbnail(clip['project'], clip['id'])
+        if not os.path.exists(thumbnail_path):
+            media.copy_thumbnail(clip['source'], clip['project'], clip['id'])
+
+        try:
+            thumbnail_surface = pygame.image.load(thumbnail_path)
+        except (pygame.error, FileNotFoundError):
+            print(f"Warning: Thumbnail for fragment {clip['id']} not found or failed to load. Using placeholder.")
+            thumbnail_surface = pygame.Surface((80, 60))
+            thumbnail_surface.fill(BLACK)
+
         self.img_thumb = pygame_gui.elements.UIImage(
-            image_surface=pygame.image.load(
-                media.get_frag_thumbnail(clip['project'], clip['id'])),
+            image_surface=thumbnail_surface,
             manager=k.gui,
             container=self.container,
             relative_rect=pygame.Rect((80, 0), (80, 60)))

@@ -1085,6 +1085,7 @@ CLIP_LIST_SQL = '''
     SELECT
         f.id AS 'id',
         f.project AS 'project',
+        f.source AS 'source',
         f.start AS 'start',
         f.stop AS 'stop',
         c.name AS 'name',
@@ -1308,6 +1309,7 @@ SEGMENT_LIST_SQL = '''
         s.idx AS 'idx',
         s.fragment AS 'fragment',
         f.project AS 'project',
+        f.source AS 'source',
         f.start AS 'start',
         f.stop AS 'stop'
     FROM segment s

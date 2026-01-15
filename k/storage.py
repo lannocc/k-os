@@ -1,7 +1,8 @@
 import k.db as kdb
 
-from os import mkdir, listdir, remove
+from os import makedirs, mkdir, listdir, remove
 from os.path import join, exists
+import os
 from urllib.request import urlretrieve
 import xml.etree.ElementTree as ET
 from subprocess import run, Popen
@@ -74,10 +75,40 @@ def delete_project_folder(project_id):
 
 def copy_thumbnail(video_id, project_id, frag_id):
     video = kdb.get_video(video_id)
+    if not video:
+        print(f"Warning: could not create thumbnail for frag {frag_id}. Video {video_id} not in DB.")
+        return
+
     channel = kdb.get_channel(video['channel'])
+    if not channel:
+        print(f"Warning: could not create thumbnail for frag {frag_id}. Channel for video {video_id} not in DB.")
+        return
+
     src = get_video_thumbnail(channel['ytid'], video['ytid'])
     dst = get_frag_thumbnail(project_id, frag_id)
-    shutil.copyfile(src, dst)
+
+    # If source thumbnail doesn't exist, try to download it.
+    if not exists(src):
+        thumb_url = video.get('thumb_url')
+        if thumb_url:
+            try:
+                print(f"Source thumbnail missing. Downloading from {thumb_url} to {src}")
+                # Ensure download directory exists
+                makedirs(os.path.dirname(src), exist_ok=True)
+                urlretrieve(thumb_url, src)
+            except Exception as e:
+                print(f"Error downloading source thumbnail for video {video['ytid']}: {e}")
+        else:
+            print(f"Warning: source thumbnail for video {video['ytid']} missing and no thumb_url in DB.")
+    
+    # If source thumbnail now exists, copy it.
+    if exists(src):
+        try:
+            shutil.copyfile(src, dst)
+        except Exception as e:
+            print(f"Error copying thumbnail from {src} to {dst}: {e}")
+    else:
+        print(f"Warning: cannot create fragment thumbnail as source is missing: {src}")
 
 def finish_adding_video(video_id):
     #from pytube import YouTube

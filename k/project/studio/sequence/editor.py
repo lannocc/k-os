@@ -2,6 +2,7 @@ from k.ui import *
 import k.db as kdb
 import k.storage as media
 from k.player.segment import Player
+import os
 
 
 class Panel(KPanel):
@@ -265,9 +266,19 @@ class Entry(KPanel):
             container=self.container,
             relative_rect=pygame.Rect((45, 30), (55, 30)))
 
+        thumbnail_path = media.get_frag_thumbnail(seg['project'], seg['fragment'])
+        if not os.path.exists(thumbnail_path):
+            media.copy_thumbnail(seg['source'], seg['project'], seg['fragment'])
+        
+        try:
+            thumbnail_surface = pygame.image.load(thumbnail_path)
+        except (pygame.error, FileNotFoundError):
+            print(f"Warning: Thumbnail for segment's fragment {seg['fragment']} not found or failed to load. Using placeholder.")
+            thumbnail_surface = pygame.Surface((80, 60))
+            thumbnail_surface.fill(BLACK)
+
         self.img_thumb = pygame_gui.elements.UIImage(
-            image_surface=pygame.image.load(
-                media.get_frag_thumbnail(seg['project'], seg['fragment'])),
+            image_surface=thumbnail_surface,
             manager=k.gui,
             container=self.container,
             relative_rect=pygame.Rect((100, 0), (80, 60)))
@@ -326,4 +337,3 @@ class Entry(KPanel):
     def play(self):
         self.k.player.open(Player(self.k, self.seq_id, self.idx))
         self.k.player.play()
-

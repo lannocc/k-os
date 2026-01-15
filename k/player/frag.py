@@ -5,6 +5,8 @@ from k.replay.ops import Action
 from .core import Resource, Tracker
 from .video import Player as Video
 
+import os
+
 
 class Chaos(UI):
     def __init__(self, k, frag_id, loop=None, jumps=None, selection_regions_json=None):
@@ -22,6 +24,31 @@ class Chaos(UI):
             stop = frag['stop']
 
             if frag_type == kdb.MEDIA_VIDEO:
+                # Ensure all required assets are present before creating a Resource.
+                # This handles playing clips from newly imported projects where media
+                # has not yet been downloaded.
+                streams = kdb.list_video_streams(source)
+                if not streams:
+                    print(f"Stream info for video {source} not found. Processing video.")
+                    self.k.jab(media.finish_adding_video, source, 'D')
+                    self.k.jab(media.extract_audio_from_video, source, 'B')
+                    streams = kdb.list_video_streams(source) # Re-fetch
+                    if not streams:
+                        raise ValueError(f"Could not get stream info for video {source} after processing.")
+
+                # Even if DB info exists, files might have been deleted.
+                video = kdb.get_video(source)
+                channel = kdb.get_channel(video['channel'])
+                stream = streams[0] #FIXME
+                vfn = media.get_video_filename(channel['ytid'], video['ytid'], stream['itag'], stream['subtype'])
+                if not os.path.exists(vfn):
+                    print(f"Video file missing: {vfn}. Re-downloading.")
+                    self.k.jab(media.finish_adding_video, source, 'D')
+                afn = media.get_audio_filename(channel['ytid'], video['ytid'])
+                if not os.path.exists(afn):
+                    print(f"Audio file missing: {afn}. Extracting.")
+                    self.k.jab(media.extract_audio_from_video, source, 'B')
+
                 res = Resource(source, k.imagine)
                 trk = Tracker(res, begin=start, end=stop)
                 go = Video(k, trk, loop, jumps, selection_regions_json=selection_regions_json, frag_id=self.frag_id)
