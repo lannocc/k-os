@@ -452,7 +452,6 @@ class OS:
             pass
 
         elif event.type == pygame.KEYDOWN:
-            print(f'XXX KEYDOWN {event.key}')
             self.keys_down.add(event.key)
             self.replay_op(KeyDown(event.scancode))
 

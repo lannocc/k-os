@@ -710,7 +710,6 @@ class Player(KPanel):
 
     def keydown(self, key, mod, keys_down=None):
         #print(f'{self.holding} DOWN {key}')
-        print(f'XXX PLAYER KEYDOWN {key}, {mod}, {keys_down}')
         pygame.key.set_repeat(0)
 
         man = False
@@ -728,7 +727,6 @@ class Player(KPanel):
         nomod = not alt and not ctrl and not shift
 
         if (key == pygame.K_EQUALS or key == pygame.K_MINUS or key == pygame.K_UNDERSCORE or key == pygame.K_PLUS) and keys_down is not None:
-            print('XXX BOOM')
             if self.adjustment_direction != 0:
                 return True 
 
@@ -1076,7 +1074,6 @@ class Player(KPanel):
                 self.keyhold(key)
 
             if nomod:
-                print('XXX SEEK LEFT')
                 self.seek(self.trk.frame - SEEK_HORIZ)
             elif ctrl:
                 self.seek(self.trk.frame - SEEK_HORIZ_CTRL)
